@@ -1,0 +1,1080 @@
+# hansl code from package tsfcst 0.52 (2018-03-18)
+
+# private functions
+
+function scalar adhocexsmess2 (matrix *x,
+                               series *v,
+                               scalar t1)
+    z = 1/2+1/2*tanh(x[1]-1/2)
+    ser = movavg(v,z,,x[2])
+    err0 = ({v}-{ser})
+    err0 = err0./err0[1]*(v[t1]-x[2])
+    return err0'err0
+end function
+
+function string adhnumchar (scalar x)
+    # for results printing;
+    flx = floor(x)
+    clx = ceil(x)
+    isi = (x-flx<5*10^-2)
+    isi2 =(clx-x<5*10^-2)
+    if isi
+        string ret0 = sprintf("%d",flx)
+    elif isi2
+        string ret0 = sprintf("%d",clx)
+    else
+        string ret0 = sprintf("%.1f",x)
+    endif
+    return ret0
+end function
+
+function strings tanams (matrix levs)
+    # for results printing; forms cnameset
+    nl = nelem(levs)
+    string ret0 = ""
+    loop i=1..nl -q
+        retn = adhnumchar(levs[i])
+        retlo = "Lo_"~retn
+        rethi = "Hi_"~retn
+        reti = retlo~" "~rethi
+        ret0 = ret0~" "~reti
+    endloop
+    ret0 = strstrip(ret0)
+    ret0 = "Point"~" "~ret0
+    rets = strsplit(ret0)
+    loop i=1..(2*nl+1) -q
+        retsi = rets[i]
+        retsi = strsub(retsi,"_"," ")
+        rets[i] = retsi
+    endloop
+    return rets
+end function
+
+function string numdat (scalar num,
+                        int frek[0])
+    # convert times() output to dates as strings
+    # including out-of sample
+    if frek==0
+        frek = $pd
+    endif
+    rnum = floor(num)
+    drob = num-rnum
+    iswan = (drob<10^-8)
+    nyear = sprintf("%d",rnum)
+    if iswan
+        nsea = 1
+    else
+        nsea = round(drob*frek)+1
+    endif
+    sea =  sprintf("%d",nsea)
+    ret = frek == 1 ? nyear : nyear~":"~sea
+    return ret
+end function
+
+function strings numdats (matrix nums,
+                          int frek[0])
+    # vectorize version of numdat
+    n = nelem(nums)
+    string ret0 = ""
+    loop i=1..n -q
+        reti = numdat(nums[i],frek)
+        ret0 = ret0~" "~reti
+    endloop
+    ret = strsplit(ret0)
+    return ret
+end function
+
+function matrix expsmpars2 (series *y "series to smooth")
+    matrix x = {0.5,mean(y)}
+    t1 = firstobs(y)
+    nelm = NMmin(x,adhocexsmess3(&x,&y,t1),1000)
+    ret = x
+    mult = x[1] > 1/2 ? 0.98 : 0.8
+    ret[1] = 1/2+mult*1/2*tanh(ret[1]-1/2)
+    nms = strsplit("alpha a")
+    nms[2] = "Init. state"
+    cnameset(ret,nms)
+    return ret
+end function
+
+function series times (series y)
+    # clone of R time(ts.object)
+    freqy = $pd
+    tt = $t1
+    ttt = obslabel(tt)
+    ttt1 = strsub(ttt,":"," ")
+    ttt3 = strsplit(ttt1)
+    ooo = ttt3[1]
+    if nelem(ttt3) > 1
+        qqq = ttt3[2]
+        qqn = atof(qqq)
+    else
+        qqn = 1
+    endif
+    oon = atof(ooo)
+    locnum = $t2-tt
+    t2 =$t2
+    ret = oon+(seq(-1,locnum-1)+qqn)./freqy
+    ret = ret'
+    series rets = ret
+    oke = ok(y)
+    loop i=tt..t2 -q
+        oki = oke[i]
+        if !oki
+            rets[i]=NA
+        endif
+    endloop
+    return rets
+end function
+
+function matrix snaivests (series y,
+                           int h[0])
+    # seasonal naive forecasts without s.e.'s
+    if h==0
+        h=$pd
+    endif
+    lo = lastobs(y)
+    f0 = {y}
+    n = nelem(f0)
+    f0 = f0[(n-$pd+1):]
+    if h<$pd
+        f0=f0[1:h]
+    endif
+    if h>$pd
+        pers = ceil(h/$pd)
+        mati = mshape(f0,1,pers*$pd)'
+        f0 = mati[1:h]
+    endif
+    return f0
+end function
+
+function matrix myacf (series x,
+                       int p[0])
+    # acf with auto-selection of lag length
+    fo = firstobs(x)
+    lo = lastobs(x)
+    n = lo-fo+1
+    if p==0
+        rp = floor(10*log10(n))
+        p = xmin(rp,(n-1))
+    else
+        print p
+    endif
+    ret =  corrgm(x,p)[,1]
+    return ret
+end function
+
+function scalar nseas (int t)
+    # outputs number of quarter or month for obs t
+    obsla = obslabel(t)
+    obsla = strsub(obsla,":"," ")
+    obslas = strsplit(obsla)
+    obsla2 = obslas[2]
+    ret = atof(obsla2)
+    return ret
+end function
+
+function series mdecompose2 (series *x,
+                             bool type[1] "add mult")
+    # simple output version of decompose to use inside ftheta
+    tt22 = $t2
+    vlo = lastobs(x)
+    f = $pd
+    sumok = nelem({x})
+    if (f <= 1) ||( sumok < 2 * f)
+        funcerr "time series has no or less than 2 periods"
+    endif
+    trend = movavg(x,f,1)
+    if type==1
+        season = x/trend
+    else
+        season = x - trend
+    endif
+    #figure = transp(permean2(season))
+    figure = (aggregate(season,lincomb(seasonals(),seq(1,f)),mean)[,3])'
+    #eval figure - figure2
+    mfig = meanr(figure)
+    if type==1
+        figure = figure/mfig
+    else
+        figure = figure-mfig
+    endif
+    sta0 = nseas($t1)
+    sss0 = figure[seq(sta0,f)]
+    vfo = firstobs(x)
+    #fofo = nseas(firstobs(x))
+    sl = $t2-$t1+1
+    periods = floor(sl/f)
+    mmm = mshape(figure,1,periods*(f+1))
+    mmm = sss0~mmm
+    mmm = mmm[1:sl]
+    series ret0=mmm
+    if vfo>$t1
+        loop i=$t1..(fofo-1) -q
+            ret0[i]=NA
+        endloop
+    endif
+    if vlo < tt22
+        loop i=0..(tt22-vlo-1) -q
+            j = tt22-i
+            ret0[j]=NA
+        endloop
+    endif
+    return ret0
+end function
+
+function scalar hinv_sc (scalar x,
+                         scalar lo,
+                         scalar hi)
+    if hi<=lo
+        funcerr "'hi' can not be less or equal to 'lo'."
+    endif
+    if (lo>-$huge)&&(hi<$huge)
+        return (lo+hi)/2+(hi-lo)/2*tanh(x-(lo+hi)/2)
+    elif (lo>-$huge)&&(hi>=$huge)
+        return lo + exp(x-lo)
+    elif (lo<=-$huge)&&(hi<$huge)
+        return  hi- exp(hi-x)
+    else
+        return x
+    endif
+end function
+
+function scalar adhocexsmess3 (matrix *x,
+                               series *v,
+                               scalar t1)
+    mult = x[1] > 1/2 ? 0.98 : 0.8
+    z = 1/2+mult*1/2*tanh(x[1]-1/2)
+    ser = movavg(v,z,,x[2])
+    err0 = ({v}-{ser})
+    err0 = err0./err0[1]*(v[t1]-x[2])
+    return err0'err0
+end function
+
+function string smartstrsub (string bigst,
+                             string find,
+                             string repl)
+    if strlen(strstr(bigst,find))
+        varch = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM0123456789_"
+        varchR = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM0123456789_(["
+        bigst1 = "#"~strsub(bigst," ", "#")~"#"
+        bigst2 = strsub(bigst1,find," "~find~" ")
+        bigst2s = strsplit(bigst2)
+        bign = nelem(bigst2s)
+        ret0 = ""
+        loop i = 1..bign -q
+            if bigst2s[i] == find
+                lengi = strlen(bigst2s[i-1])
+                left = strlen(strstr(varch,substr(bigst2s[i-1],lengi,lengi)))
+                right = strlen(strstr(varchR,substr(bigst2s[i+1],1,1)))
+                if !left&&!right
+                    bigst2s[i] = repl
+                endif
+            endif
+            ret0 = ret0~bigst2s[i]
+        endloop
+        return strstrip(strsub(ret0,"#"," "))
+    else
+        return bigst
+    endif
+end function
+
+function scalar start_sc (scalar lo,
+                          scalar hi)
+    if hi<=lo
+        funcerr "'hi' can not be less or equal to 'lo'."
+    endif
+    if (lo>-$huge)&&(hi<$huge)
+        return (lo+hi)/2
+    elif (lo>-$huge)&&(hi>=$huge)
+        return lo + exp(lo)
+    elif (lo<=-$huge)&&(hi<$huge)
+        return  hi- exp(hi)
+    else
+        return 0
+    endif
+end function
+
+function matrix start_mt (matrix lo "lower bounds in restrictions",
+                          matrix hi "upper bounds in restrictions")
+    nl = nelem(lo)
+    matrix hix = lo
+    loop i=1..nl -q
+        hix[i] = start_sc(lo[i],hi[i])
+    endloop
+    return hix
+end function
+
+function matrix read_sthpar (string pars)
+    matrix select = zeros(1,4)
+    #  pars = "noprint|m, notrend|m, noseas|seas|m, tramo|x-12|simple|simpleM|m"
+    # 'm' = missed
+    # 'noprint' not to print results
+    # 'notrend' not use trend transformation
+    # 'noseas' use non-seasonal version
+    # 'seas' use seasonal version
+    # if both absent - autodetect
+    # 'simple' 'tramo' 'x-12' - type of decomposition
+    # if all missed - try tramo, then x-12, then simple
+    # "seas,x-12" uses seasonal version based on X-12-...
+    # "x-12" test seasonality, use X-12 if seasonal. is detected
+    pabackup = pars
+    pars = strsub(pars," ","")
+    if strlen(strstr(pars,",,"))
+        funcerr "wrong options specification"
+    endif
+    if substr(pars,1,1) == ","
+        funcerr "wrong options specification"
+    endif
+    npars0 = strlen(pars)
+    if npars0 > 0
+        if substr(pars,npars0,npars0) == ","
+            funcerr "wrong options specification"
+        endif
+    endif
+    cnameset(select,"s tre prin setype")
+    select[3] = strlen(strstr(pars,"noprint")) == 0
+    pars = strsub(pars,"noprint","")
+    select[2] = strlen(strstr(pars,"notrend")) == 0
+    pars = strsub(pars,"notrend","")
+    cksum = 0
+    checknoseas = strlen(strstr(pars,"noseas")) > 0
+    cksum += checknoseas
+    pars = strsub(pars,"noseas","")
+    checkseas = strlen(strstr(pars,"seas")) > 0
+    if checknoseas&&checkseas
+        funcerr "ambiguous seasonality specification"
+    endif
+    if checkseas
+        select[1] = 1
+    endif
+    if !checknoseas&&!checkseas
+        select[1] = 2
+    endif
+    if checknoseas
+        select[4] = -1
+    endif
+    pars = strsub(pars,"seas","")
+    checksimpleM = strlen(strstr(pars,"simpleM")) > 0
+    cksum += checksimpleM
+    pars = strsub(pars,"simpleM","")
+    checksimple = strlen(strstr(pars,"simple")) > 0
+    cksum += checksimple
+    pars = strsub(pars,"simple","")
+    check12 = strlen(strstr(pars,"x-12")) > 0
+    cksum += check12
+    pars = strsub(pars,"x-12","")
+    checktramo = strlen(strstr(pars,"tramo")) > 0
+    cksum += checktramo
+    if cksum > 1
+        funcerr "ambiguous seasonality specification"
+    endif
+    pars = strsub(pars,"tramo","")
+    pars = strsub(pars,",","")
+    respars = strlen(pars)
+    if respars > 0
+        funcerr "wrong options specification"
+    endif
+    #         print cksum
+    #         print respars
+    #         print checknoseas
+    #         print checkseas
+    #         print checksimpleM
+    #         print checksimple
+    #         print checktramo
+    #         print check12
+    if checktramo
+        select[4] = 1
+    elif check12
+        select[4] = 2
+    elif checksimple
+        select[4] = 3
+    elif checksimpleM
+        select[4] = 4
+    endif
+    return select
+end function
+
+function string uniqvarlist (string fla)
+    fla2 = "#"~fla~"#"
+    chars = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+    digits = "0123456789"
+    lefla = strlen(fla2)
+    matrix charmap = zeros(lefla,1)
+    matrix digmap = charmap
+    matrix bramap = charmap
+    matrix undmap = charmap
+    loop i = 1..lefla -q
+        chari = substr(fla2,i,i)
+        if strlen(strstr(chars,chari))
+            charmap[i] =  1
+        endif
+        if strlen(strstr(digits,chari))
+            digmap[i] =  1
+        endif
+        if chari == "_"
+            undmap[i] = 1
+        endif
+        if (chari == "(")||(chari == "[")
+            bramap[i] = 1
+        endif
+    endloop
+    all_charmap = charmap + digmap + undmap
+    matrix seql = seq(0,lefla-1)'
+    matrix begins = seql .*(diff(all_charmap).> 0)
+    matrix ends = seql.*mlag((diff(all_charmap).< 0),-1)
+    if  sumc(uniq(begins))
+        matrix numbegins = uniq(begins)[2:]
+        matrix numends = uniq(ends)[2:]
+        smalln = nelem(numends)
+        ret = ""
+        strings rets
+        loop i =1..smalln -q
+            summ = 0
+            reti = substr(fla,numbegins[i],numends[i])
+            nofun = substr(fla,numends[i]+1,numends[i]+1)!="("
+            if nofun
+                if i==1
+                    rets +=reti
+                    ret = ret~" "~reti
+                else
+                    nrets = nelem(rets)
+                    summ = 0
+                    loop j=1..nrets -q
+                        summ += reti == rets[j]
+                    endloop
+                    if !(digmap[numbegins[i]+1]+bramap[numends[i]+2]+summ)
+                        rets +=reti
+                        ret = ret~" "~reti
+                    endif
+                endif
+            endif
+        endloop
+        return strstrip(ret)
+    else
+        return "_empty"
+    endif
+end function
+
+# public functions
+
+function matrix expsmpars (series *y "series to smooth")
+    matrix x = {0.5,mean(y)}
+    t1 = firstobs(y)
+    nelm = NMmin(x,adhocexsmess2(&x,&y,t1),1000)
+    ret = x
+    ret[1] = 1/2+1/2*tanh(ret[1]-1/2)
+    nms = strsplit("alpha a")
+    nms[2] = "Init. state"
+    cnameset(ret,nms)
+    return ret
+end function
+
+function matrix stheta (series y "series to forecast",
+                        scalar h[NA] "horizon, NA = $pd",
+                        string opts[null] "options, see the help file/comment",
+                        matrix level[null] "conf. levels d.= {80,95}",
+                        scalar wts[NA] "weight for forec. seasonality")
+    #  opts = "noprint|m, notrend|m, noseas|seas|m, tramo|x-12|simpleM|m"
+    # 'm' = missed
+    # 'noprint' not to print forecasts and bounds
+    # 'notrend' not to use trend transformation
+    # 'noseas' use non-seasonal version
+    # 'seas' use seasonal version
+    #    if both are absent - autodetect
+    # 'simpleM' 'tramo' 'x-12' - type of seasonal ecomposition
+    #    'simpleM' classical multiplicative
+    #    if all missed - uses additive classical decomp.
+    #    e.g. opts = "seas, x-12": uses seasonal version based on X-12-...
+    #    opts = "x-12": tests seasonality, uses X-12 if seasonality is detected
+    if missing(wts)
+        wts = 0.5
+    endif
+    if missing(h)
+        h = $pd
+    endif
+    if isnull(level)
+        level = {80,95}
+    endif
+    if isnull(opts)
+        opts = ""
+    endif
+    matrix selection = read_sthpar(opts)
+    scalar s = $pd == 1 ? 0 : selection[1]
+    scalar tre = selection[2]
+    scalar prin = selection[3]
+    scalar setype = selection[4]
+    mult = 0
+    multwarn = 0
+    if setype == 4
+        #eval "miny"
+        setype = 3
+        if min(y)*max(y) <= 0
+            fili = sprintf("Warning: %s changes sign or has zeros: use of",argname(y))
+            printf "\n%s",fili
+            printf "\nadditive decomposition is forced\n"
+        else
+            mult = 1
+        endif
+    endif
+    ttt2 = xmin($t2,lastobs(y))
+    ttt1 = xmax($t1,firstobs(y))
+    smpl ttt1 ttt2
+    n = ttt2 - ttt1+1
+    okey = ok(y)
+    n0 = ttt1
+    tt11 = ttt1
+    nnn = ttt2- xmax(n0,tt11)+1
+    fq = $pd
+    Time_y = times(y)
+    Time_forec = Time_y[ttt2] + seq(1,h)/fq
+    x = y
+    if s == 2
+        s=0
+        if (fq==4)||(fq==12)
+            xacf = myacf(x)
+            # 1.64  # 1.96
+            clim = 1.64/sqrt(n-n0+1) * sqrt(cum(1|(2 * xacf.^2)))
+            s = abs(xacf[fq]) > clim[fq]
+            if s == 0
+                printf "\nNon-seasonal model is selected\n"
+            endif
+        endif
+    endif
+    if s==1
+        #forced3 = 0
+        if setype == 0
+            setype = 3
+            mult = 0
+        elif setype == 1
+            y = deseas(y,T)
+            y_decomp = x/y
+        elif setype == 2
+            y = deseas(y)
+            y_decomp = x/y
+        endif
+        if setype == 3
+            if mult == 0
+                bude = decompcl(&x,0)
+                y_decomp = bude.seasonal
+                y = y-y_decomp
+                numnas = ttt2 - lastobs(bude.season)
+                fors_on = snaivests(bude.season,h+numnas)[numnas+1:]
+                fors_al = snaivests(bude.seasonal,h)
+            else
+                bude = decompcl(&y)
+                y_decomp = bude.seasonal
+                y = y/y_decomp
+                numnas = ttt2 - lastobs(bude.season)
+                fors_on = snaivests(bude.season,h+numnas)[numnas+1:]
+                fors_al = snaivests(bude.seasonal,h)
+            endif
+        endif
+    endif
+    if tre
+        ols y 0 Time_y -q
+        beta = $coeff
+        series Z = $yhat + 2 * $uhat
+        par = expsmpars2(&Z)
+    else
+        par = expsmpars2(&y)
+    endif
+    genr time
+    series Time = time - n0+1
+    Bn = 6*( 2*sum(Time*y)/nnn - (1+nnn)*mean(y) )/(nnn^2 -1)
+    An = mean(y) - (nnn+1)*Bn/2
+    new_y = {y}
+    mu = zeros(nnn+h,1)
+    ell = mu
+    A = mu
+    B = mu
+    meanY = mu
+    scalar ell0 = par[2]/2
+    scalar	alpha = par[1]
+    scalar	theta = 2
+    alpha0 = alpha
+    ell[1] = alpha0*new_y[1] + (1-alpha0)*ell0
+    meanY[1] = new_y[1]
+    A[1] = An
+    B[1] = Bn
+    mu[1] = ell0 + (1-1/theta)*( An + Bn)
+    muu1 = mu[1]
+    limit = nnn+h
+    new_y = new_y|zeros(h,1)
+    loop i=1..(limit-1) -q
+        mui1 = (A[i]*((1-alpha0)^i) + B[i]*(1-(1-alpha0)^(i+1))/alpha0)
+        mu[i+1] = ell[i] + (1-1/theta)*mui1
+        if i >= nnn
+            new_y[i+1] = mu[i+1]
+        endif
+        ell[i+1] = alpha0*new_y[i+1] + (1-alpha0)*ell[i]
+        meanY[i+1] = (i*meanY[i] + new_y[i+1])/(i+1)
+        A[i+1] = An
+        B[i+1] = Bn
+    endloop
+    nm = nelem(mu)
+    nmsmall = nm-h
+    Y_fcast = mu[(nmsmall+1):]
+    Y_fitted = mu[1:nmsmall]
+    Y_residuals = {y} - Y_fitted
+    if level[1]>0
+        nSample=512
+        elln = ell[nnn]
+        sd_error = sd(Y_residuals[3:])
+        matForec_sample = zeros(nSample,h)
+        Am = ones(nSample, 1)*An
+        Bm = ones(nSample, 1)*Bn
+        ellm = ones(nSample, 1)*elln
+        meanYm = ones(nSample, 1)*mean(y)
+        set seed 13
+        loop i = nnn..(nnn+h-1) -q
+            ter1 = ellm + (1-1/theta)*( Am*((1-alpha0)^i) + Bm*(1-(1-alpha0)^(i+1)))
+            matForec_sample[,i+1-nnn] = ter1.+ mnormal(nSample, 1).*sd_error
+            ellm = alpha0*matForec_sample[,i+1-nnn] + (1-alpha0)*ellm
+            meanYm = (i*meanYm + matForec_sample[,i+1-nnn])/(i+1)
+            Bm = ( (i-1)*Bm +6*(matForec_sample[,i+1-nnn] -meanYm)/(i+1) )/(i+2)
+            Am = meanYm - Bm*(i+2)/2
+        endloop
+        set seed 0
+        nnll = nelem(level)
+        matrix qq = (1-0.01*level)/2
+        matrix probs0 = qq|(1-qq)
+        matrix probs = mshape(probs0,1,2*nnll)
+        matrix quantiles = {}
+        loop i=1..(2*nnll) -q
+            quanti = quantile(matForec_sample,probs[i])'
+            quantiles = quantiles~quanti
+        endloop
+    endif
+    if s==1
+        if setype < 3
+            y = y * y_decomp
+            Y_fitted = {y_decomp}.* Y_fitted
+            s_forec = snaivests(y_decomp, h)
+            Y_fcast =  s_forec.* Y_fcast
+            Y_residuals = {y} - Y_fitted
+            if level[1]>0
+                loop i=1..(cols(quantiles)) -q
+                    quantiles[,i] = quantiles[,i].* s_forec
+                endloop
+            endif
+        else
+            if mult
+                #           if s==1
+                y = y * y_decomp
+                Y_fitted = {y_decomp}.* Y_fitted
+                #s_forec = snaivests(y_decomp, h)
+                #s_forec = (fors_on + fors_al)/2
+                s_forec = wts*fors_on + (1-wts)*fors_al
+                Y_fcast =  s_forec.* Y_fcast
+                Y_residuals = {y} - Y_fitted
+                if level[1]>0
+                    loop i=1..(cols(quantiles)) -q
+                        quantiles[,i] = quantiles[,i].* s_forec
+                    endloop
+                endif
+            else
+                y = y + y_decomp
+                Y_fitted = {y_decomp}.+ Y_fitted
+                #s_forec = (fors_on + fors_al)/2
+                s_forec = wts*fors_on + (1-wts)*fors_al
+                Y_fcast =  s_forec.+ Y_fcast
+                Y_residuals = {y} - Y_fitted
+                if level[1]>0
+                    loop i=1..(cols(quantiles)) -q
+                        quantiles[,i] = quantiles[,i].+ s_forec
+                    endloop
+                endif
+            endif
+        endif
+    endif
+    if level[1]>0
+        retmatr = Y_fcast~quantiles
+        cnams = tanams(level)
+        cnameset(retmatr,cnams)
+    else
+        cnams = "Point"
+        cnameset(retmatr,cnams)
+        retmatr = Y_fcast
+    endif
+    rnams = numdats(Time_forec)
+    rownames(retmatr,rnams)
+    ay = argname(y)
+    if prin
+        printf "\nTheta-method forecasts of %s:\n", ay
+        printf "\n%11.5f\n", retmatr
+    endif
+    return retmatr
+end function
+
+function bundle decompcl (series *x "series to decompose",
+                          bool type[1] "0 = additive; 1 = multiplicative")
+    # classical decomposition of time series
+    f = $pd
+    sumok = nelem({x})
+    if (f <= 1) ||( sumok < 2 * f)
+        funcerr "time series has no or less than 2 periods"
+    endif
+    tt22 = $t2
+    vlo = lastobs(x)
+    trend = movavg(x,f,1)
+    if type==1
+        season = x/trend
+    else
+        season = x - trend
+    endif
+    #figure = transp(permean2(season))
+    figure = (aggregate(season,lincomb(seasonals(),seq(1,f)),mean)[,3])'
+    mfig = meanr(figure)
+    if type==1
+        figure = figure/mfig
+    else
+        figure = figure-mfig
+    endif
+    sta0 = nseas($t1)
+    sss0 = figure[seq(sta0,f)]
+    vfo = firstobs(x)
+    #fofo = nseas(firstobs(x))
+    sl = $t2-$t1+1
+    periods = floor(sl/f)
+    mmm = mshape(figure,1,periods*(f+1))
+    mmm = sss0~mmm
+    mmm = mmm[1:sl]
+    series ret0=mmm
+    if vfo>$t1
+        loop i=$t1..(fofo-1) -q
+            ret0[i]=NA
+        endloop
+    endif
+    if vlo < tt22
+        loop i=0..(tt22-vlo-1) -q
+            j = tt22-i
+            ret0[j]=NA
+        endloop
+    endif
+    if type == 0
+        random = x - ret0 - trend
+        stype = "additive"
+    else
+        random =  x/ret0/trend
+        stype = "multiplicative"
+    endif
+    bundle bun
+    series bun["x"] = x
+    series bun["trend"] = trend
+    series bun["season"] = season
+    series bun["seasonal"] = ret0
+    series bun["random"] = random
+    matrix bun["figure"] = figure
+    string bun["type"] = stype
+    return bun
+end function
+
+function matrix hinv (matrix x "arguments of objective function",
+                      matrix lo "lower bounds in restrictions",
+                      matrix hi "upper bounds in restrictions")
+    # box -> R^n transformation
+    nl = nelem(lo)
+    matrix hix = x
+    loop i=1..nl -q
+        hix[i] = hinv_sc(x[i],lo[i],hi[i])
+    endloop
+    return hix
+end function
+
+function void fcast_plot (series *y "forecasted series",
+                          matrix fcasts "forecasts and/or ses/cis",
+                          scalar t2[NA] "last obs of y, NA = xmin($t2,lastobs(y)",
+                          scalar setype[NA] "how to read other columns of fcasts",
+                          scalar cl[NA] "cl if se are inputted, NA = 0.9")
+    string s = sprintf("%d",fcasts)
+    nss = nlines(s)
+    string line
+    scalar i1 = 1
+    ny = argname(y)
+    if missing(setype)
+        ncol = cols(fcasts)
+        if ncol == 1
+            setype = 0
+        elif ncol == 2
+            setype = 1
+        elif ncol > 2
+            setype =2
+        else
+            funcerr "Not enough data in the forecasts matrix"
+        endif
+    endif
+    if missing(t2)
+        t2 = xmin($t2,lastobs(y))
+    endif
+    t1 = xmax($t1,firstobs(y))
+    T0 = t2-t1+1
+    if T0 > 100
+        t1 = t2 - 99
+    endif
+    smpl t1 t2
+    Time_y = times(y)
+    sdate_plus_1 = numdat(Time_y[t2]+1/$pd)
+    fdate1 = rnameget(fcasts,1)
+    if sdate_plus_1 != fdate1
+        printf "\nWarning: consistency check of current %s sample",ny
+        printf "\nand forecasts range failed. Check it manually."
+        printf "\nYou may need to change the current sample to get"
+        printf "\na meaningful plot.\n"
+    endif
+    mtime_y = {Time_y}
+    h = rows(fcasts)
+    Time_forec = Time_y[t2].+ seq(1,h)./$pd
+    dada = numdats(mtime_y'~Time_forec)
+    mtime_y =mtime_y|Time_forec'
+    nyears = selifr(seq(1,t2-t1+1+h)', mtime_y .= round(mtime_y))
+    theyears = mtime_y[nyears]
+    ncount = nelem(nyears)
+    ncount_10 = ncount%10
+    periodi = ceil(ncount/10)
+    counti = seq(1,ncount)'
+    if periodi > 1
+        nyears = selifr(nyears,counti./periodi .= round(counti./periodi))
+        theyears = selifr(theyears,counti./periodi .= round(counti./periodi))
+        ncount = nelem(nyears)
+    endif
+    tika = "("
+    loop i=1..ncount -q
+        tikai = sprintf("'%d' %d,",theyears[i],nyears[i])
+        tika = tika~" "~tikai
+    endloop
+    tika = tika~")"
+    tika = strsub(tika,",)",")")
+    my = {y}
+    plt = my|fcasts[,1]
+    string title = sprintf("Forecasts of %s", ny)
+    string yname = sprintf("%s, forecasts", ny)
+    if setype == 0
+        plot plt
+            options time-series with-lines
+            literal set xtics @tika
+            literal set nokey
+            printf "set title \"%s\"", title
+            printf "set ylabel \"%s\"", yname
+        end plot --output=display
+    elif setype == 2
+        center = my|((fcasts[,2]+ fcasts[,3])/2)
+        width = zeros(nelem(my),1)|((fcasts[,3]- fcasts[,2])/2)
+        matrix B = center~width
+        plot plt
+            options time-series with-lines
+            options band=B,1 band-style=fill
+            literal set xtics @tika
+            literal set nokey
+            printf "set title \"%s\"", title
+            printf "set ylabel \"%s\"", yname
+        end plot --output=display
+    else
+        center = plt
+        width = zeros(nelem(my),1)|fcasts[,2]
+        if missing(cl)
+            cl = 0.9
+        endif
+        matrix B = center~width
+        ten = critical(n,(1-cl)/2)
+        # from example in help to plot: 'options band=B,10 band-style=fill'
+        # that's why 'ten' as a name for a variable
+        plot plt
+            options time-series with-lines
+            options band=B,ten band-style=fill
+            literal set xtics @tika
+            literal set nokey
+            printf "set title \"%s\"", title
+            printf "set ylabel \"%s\"", yname
+        end plot --output=display
+    endif
+end function
+
+function matrix NMminC (string fu "quoted expression to minimize",
+                        matrix los "left bounds",
+                        matrix his "right bounds",
+                        matrix z[null] "other variables",
+                        matrices M[null] "yet other variables",
+                        list L[null] "further variables as series",
+                        matrix x[null] "start values of 'wrt. to' variable")
+    # inside fu the optimizing variable is 'x'
+    # M is needed when one has many matrices of different shape
+    if isnull(x)
+        matrix x = start_mt(los,his)
+    else
+        matrix x = x
+    endif
+    fu0 = fu
+    fu = smartstrsub(fu,"x","hinv(x,los,his)")
+    n = nelem(los)
+    cns = n == 1 ? "fmin x" : "fmin"
+    if n == 1
+        xi = "x[1]"
+        txtxi = "hinv_sc(x[1],los[1],his[1)"
+    else
+        loop i = 1..n -q
+            xi = sprintf("x[%d]",i)
+            txtxi = sprintf("hinv_sc(x[%d],los[%d],his[%d])",i,i,i)
+            fu = strsub(fu,xi,txtxi)
+            cns = cns~" "~xi
+        endloop
+    endif
+    fu = "("~fu~")"
+    nm = NMmin(x,@fu)
+    x = hinv(x,los,his)
+    fmi = @fu0
+    matrix ret = fmi~x
+    cnameset(ret,cns)
+    return ret
+end function
+
+function matrix NMmaxC (string fu "quoted expression to minimize",
+                        matrix los "left bounds",
+                        matrix his "right bounds",
+                        matrix z[null] "other variables",
+                        matrices M[null] "yet other variables",
+                        list L[null] "further variables as series",
+                        matrix x[null] "init. val. of optimizing variable")
+    # inside fu the optimizing variable is 'x'
+    # M is needed when one has many matrices of different shape
+    if isnull(x)
+        matrix x = start_mt(los,his)
+    else
+        matrix x = x
+    endif
+    fu0 = fu
+    fu = smartstrsub(fu,"x","hinv(x,los,his)")
+    n = nelem(los)
+    cns = n == 1 ? "fmax x" : "fmax"
+    if n == 1
+        xi = "x[1]"
+        txtxi = "hinv_sc(x[1],los[1],his[1)"
+    else
+        loop i = 1..n -q
+            xi = sprintf("x[%d]",i)
+            txtxi = sprintf("hinv_sc(x[%d],los[%d],his[%d])",i,i,i)
+            fu = strsub(fu,xi,txtxi)
+            cns = cns~" "~xi
+        endloop
+    endif
+    fu = "("~fu~")"
+    nm = NMmax(x,@fu)
+    x = hinv(x,los,his)
+    fmi = @fu0
+    matrix ret = fmi~x
+    cnameset(ret,cns)
+    return ret
+end function
+
+function matrix fcast_ac (string cmd "quoted command/function to forecast",
+                          int res[0] "reserved obs, 0 = [T/5]",
+                          scalar h[NA] "horizon, NA = $pd")
+    cmd200 = strsub(cmd," ","")
+    users = ""
+    if substr(cmd200,1,7) == "stheta("
+        users = "stheta"
+        cmds = strsplit(cmd200,",")
+        nnyy = strsplit(cmds[1],"(")[2]
+        list daset = seq(0,$nvars-1)
+        ycount = inlist(daset,nnyy)
+        genseries("y",daset[ycount])
+        cmd = smartstrsub(cmd,nnyy,"y")
+        if nelem(cmds) > 1
+            hor = cmds[2]
+            h = hor == "NA" ? $pd : atof(hor)#@hor
+        else
+            h = $pd
+        endif
+    else
+        avarss = strsplit(uniqvarlist(cmd))
+        nnyy = avarss[2]
+        list daset = seq(0,$nvars-1)
+        ycount = inlist(daset,nnyy)
+        genseries("y",daset[ycount])
+        cmd = smartstrsub(cmd,nnyy,"y")
+        if missing(h)
+            h = $pd
+        endif
+        cmd = cmd~" -q"
+    endif
+    if isnull(opt)
+        opt = ""
+    endif
+    n = res-h
+    matrix ferr = {}
+    matrix fstats = {}
+    matrix fperr = {}
+    allt1 = xmax($t1,firstobs(y))
+    allt2 = xmin($t2, lastobs(y))
+    if res == 0
+        res = round((allt2-allt+1)/5)
+    endif
+    smpl (allt2-res+1) allt2
+    matrix z = {y}
+    matrix ally = {}
+    matrix allf = {}
+    set warnings off
+    loop i = 0..n -q
+        smpl allt1 allt2
+        resi = res-i
+        smpl +0 -resi
+        t2 = $t2
+        t1 = $t1
+        if users == ""
+            catch @cmd
+            erro = $error
+            if erro > 0
+                st1 = obslabel(t1)
+                st2 = obslabel(t2)
+                s3 = "Failed to estimate on sample: from "~st1~" to "~st2
+                printf "\n%s\n",s3
+                funcerr ""
+            endif
+            smpl t1 (t2+h)
+            fcast (t2+1) (t2+h) -q
+            matrix yi = z[(i+1):(i+h)]
+            matrix fi = $fcast
+            ei = yi-fi
+            mi = fcstats(yi,fi)
+        elif users == "stheta"
+            catch matrix ma = @cmd
+            erro = $error
+            if erro > 0
+                st1 = obslabel(t1)
+                st2 = obslabel(t2)
+                s3 = "Failed to estimate on sample: from "~st1~" to "~st2
+                printf "\n%s\n",s3
+                funcerr ""
+            endif
+            smpl t1 (t2+h)
+            matrix yi = z[(i+1):(i+h)]
+            matrix fi = ma[,1]
+            #print yi fi
+            ei = yi-fi
+            mi = fcstats(yi,fi)
+        else
+            funcerr "currently not supported"
+        endif
+        fstats = fstats|mi'
+        ally = ally|yi
+        allf = allf|fi
+    endloop
+    strings lblss = array(n+2)
+    #string lbls = ""
+    #print n
+    smpl allt1 allt2
+    loop i = 0..n -q
+        #lbls = lbls~" "~obslabel(allt2-res+i)
+        #eval obslabel(allt2-res+i+h)
+        lblss[i+1] = obslabel(allt2-res+i+1)~" - "~obslabel(allt2-res+i+h)
+        #         ~numdat(times(y)[allt2-res+i+1+h])
+    endloop
+    lblss[n+2] = obslabel(allt2-res+1)~" - "~obslabel(allt2-res+n+h)
+    #lbls = lbls~" total"
+    allstats = fcstats(ally,allf)'
+    fstats = fstats|allstats
+    rownames(fstats,lblss)
+    cnameset(fstats,"ME MSE MAE MPE MAPE U UM UR UD")
+    printf "\n%13.6g\n", fstats
+    return fstats
+end function

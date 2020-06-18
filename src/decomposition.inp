@@ -1,0 +1,83 @@
+function list decomposition (const series y,
+                             const bool multiplicative[FALSE])
+    /* Classical decomposition of a time-series.
+    https://otexts.com/fpp2/classical-decomposition.html */
+
+    list L = null
+    smpl y --no-missing
+    scalar frequency = $pd
+    scalar T = nobs(y)
+
+    if frequency == 1
+        printf "Error: Time-series must have seasonal frequency.\n"
+        return L
+    endif
+    if T < 2 * frequency
+        printf "Error: Time-series must have at least %d valid observations.\n", 2*frequency
+        return L
+    endif
+
+    series trend = trend_component(y)
+    series detrended = detrended_component(y, trend, multiplicative)
+    series season = season_component(detrended)
+    series remainder = remainder_component(y, trend, season, multiplicative)
+
+    list L += trend season remainder
+
+    return L
+end function
+
+function series remainder_component (const series y,
+                                    const series trend,
+                                    const series season,
+                                    const bool multiplicative)
+    /* Compute the remainder component. */
+
+    if multiplicative
+        return y / (trend * season)
+    else
+        return y - trend - season
+    endif
+end function
+
+function series season_component (const series detrended)
+    /* Compute seasonal component. */
+
+    return lincomb(seasonals(), seasonal_means(detrended)')
+end function
+
+function matrix seasonal_means (const series detrended)
+    /* Compute seasonal averages based on detrended series.
+    Clever idea from Oleh. */
+
+    series season_id = lincomb(seasonals(), seq(1, $pd))
+    # mean values for each season id (january, feb etc)
+    matrix m = aggregate(detrended, season_id, mean)[,3]
+    return m
+end function
+
+
+function series detrended_component (const series y,
+                                const series trend,
+                                const bool multiplicative)
+    /* Compute detrended component */
+
+    if multiplicative
+        series season = y / trend
+    else
+        series season = y - trend
+    endif
+
+    return season
+end function
+
+function series trend_component (const series y)
+    /* Compute trend component */
+
+    scalar p = $pd
+    # multiply by 2 for even frequencies
+    p = ($pd == 4 || $pd == 12 || $pd == 24) ? p*2 : p
+    series trend = movavg(y, p, 1)
+
+    return trend
+end function

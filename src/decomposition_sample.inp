@@ -1,0 +1,17 @@
+clear
+set verbose off
+open hamilton -q -p
+
+include decomposition.inp --force
+
+series y = PZUNEW
+
+scalar MULTIPLICATIVE = 0
+
+if MULTIPLICATIVE
+    list L = decomposition(y, TRUE)
+else
+    list L = decomposition(y, FALSE)
+endif
+L += y
+scatters L --output=display
