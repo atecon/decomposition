@@ -6,7 +6,7 @@ include decomposition.inp --force
 
 series y = PZUNEW
 
-scalar MULTIPLICATIVE = 0
+scalar MULTIPLICATIVE = 1
 
 if MULTIPLICATIVE
     list L = decomposition(y, TRUE)
