@@ -4,7 +4,7 @@ function list decomposition (const series y,
     https://otexts.com/fpp2/classical-decomposition.html */
 
     list L = null
-    smpl y --no-missing
+    smpl y --contiguous
     scalar frequency = $pd
     scalar T = nobs(y)
 
@@ -19,7 +19,7 @@ function list decomposition (const series y,
 
     series trend = trend_component(y)
     series detrended = detrended_component(y, trend, multiplicative)
-    series season = season_component(detrended)
+    series season = season_component(detrended, multiplicative)
     series remainder = remainder_component(y, trend, season, multiplicative)
 
     list L += trend season remainder
@@ -40,10 +40,22 @@ function series remainder_component (const series y,
     endif
 end function
 
-function series season_component (const series detrended)
+function series season_component (const series detrended,
+                                 const bool multiplicative)
     /* Compute seasonal component. */
 
-    return lincomb(seasonals(), seasonal_means(detrended)')
+    matrix m = seasonal_means(detrended)
+
+    # center the seasonal indices: sum to zero (additive) or
+    # average to one (multiplicative), as required by the
+    # classical decomposition method
+    if multiplicative
+        m = m ./ meanc(m)
+    else
+        m = m .- meanc(m)
+    endif
+
+    return lincomb(seasonals(), m')
 end function
 
 function matrix seasonal_means (const series detrended)
