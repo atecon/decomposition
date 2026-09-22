@@ -1,0 +1,17 @@
+clear
+set verbose off
+open hamilton -q -p
+
+include stl.inp --force
+
+series y = PZUNEW
+
+scalar ROBUST = 0
+
+if ROBUST
+    list L = stl_decompose(y, 13, 0, 0, 0, 0, TRUE)
+else
+    list L = stl_decompose(y, 13)
+endif
+L += y
+scatters L --output=display
