@@ -25,6 +25,9 @@ function list decomposition (const series y,
     series detrended = detrended_component(y, trend, multiplicative)
     series season = season_component(detrended, multiplicative)
     series remainder = remainder_component(y, trend, season, multiplicative)
+    setinfo trend --description="Trend-cycle component (classical decomposition)" --graph-name="Trend-cycle"
+    setinfo season --description="Seasonal component (classical decomposition)" --graph-name="Seasonal"
+    setinfo remainder --description="Remainder component (classical decomposition)" --graph-name="Remainder"
 
     list L += trend season remainder
 
