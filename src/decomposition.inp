@@ -84,12 +84,18 @@ function series detrended_component (const series y,
 end function
 
 function series trend_component (const series y)
-    /* Compute trend component */
+    /* Compute the trend-cycle component via a centered moving average,
+    per https://otexts.com/fpp3/classical-decomposition.html (Step 1):
+    an m-MA if the seasonal period m ($pd) is odd, or a 2xm-MA if m is
+    even. gretl's movavg(x, p, control) with a non-zero control already
+    implements the full centered procedure for either case -- for even
+    p this is the two-stage "m-MA then 2-MA of that" construction, not
+    a plain (2p)-term average, so no manual doubling of p is needed or
+    correct. Verified against the worked beer-production example in
+    the fpp3 textbook (Table 3.2): movavg(beer, 4, 1) reproduces the
+    published 2x4-MA column exactly. */
 
-    scalar p = $pd
-    # multiply by 2 for even frequencies
-    p = ($pd == 4 || $pd == 12 || $pd == 24) ? p*2 : p
-    series trend = movavg(y, p, 1)
+    series trend = movavg(y, $pd, 1)
 
     return trend
 end function
