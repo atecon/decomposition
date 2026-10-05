@@ -4,9 +4,13 @@ function list decomposition (const series y,
     https://otexts.com/fpp2/classical-decomposition.html */
 
     list L = empty
+    scalar Torig = $nobs
     smpl y --contiguous
+    scalar T = $nobs
+    if T < Torig
+        printf "Warning: %d missing observations were ignored.\n", (Torig - T)
+    endif
     scalar frequency = $pd
-    scalar T = nobs(y)
 
     if frequency == 1
         printf "Error: Time-series must have seasonal frequency.\n"
