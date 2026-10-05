@@ -1,12 +1,16 @@
 clear
 set verbose off
-open hamilton -q -p
 
+string DATADIR = "/home/admin-tarassow/git/forecasting_principles/data/gdt"
+
+open "@DATADIR/aus_production.gdt" --preserve
+
+include stl.inp --force
 include decomposition.inp --force
+series y = Electricity
 
-series y = PZUNEW
-
-scalar MULTIPLICATIVE = 1
+# Classical decomposition
+scalar MULTIPLICATIVE = FALSE
 
 if MULTIPLICATIVE
     list L = decomposition(y, TRUE)
@@ -15,3 +19,18 @@ else
 endif
 L += y
 scatters L --output=display
+
+# STL decomposition
+list L = empty
+scalar ROBUST = TRUE
+
+if ROBUST
+    list L = stl_decompose(y, 13, 0, 0, 0, 0, ROBUST)
+else
+    list L = stl_decompose(y, 13)
+endif
+L += y
+scatters L --output=display
+
+
+
