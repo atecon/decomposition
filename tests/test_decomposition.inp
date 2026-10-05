@@ -1,0 +1,77 @@
+set assert stop
+set verbose off
+
+include ../src/decomposition.inp --force
+
+# ---------------------------------------------------------------------
+# Test 1: trend_component() with an EVEN seasonal period (m=4) must
+# reproduce the 2x4-MA exactly, per the worked beer-production example
+# in fpp3 (https://otexts.com/fpp3/classical-decomposition.html,
+# Table 3.2). This guards against regressing to the old buggy
+# movavg(y, 2*m, 1) (a plain, wrongly-wide moving average).
+# ---------------------------------------------------------------------
+nulldata 6
+setobs 4 1992:1
+series beer = {443, 410, 420, 532, 433, 421}
+series trend = trend_component(beer)
+
+assert(abs(trend[3] - 450.000) < 0.001)
+assert(abs(trend[4] - 450.125) < 0.001)
+
+printf "PASS: trend_component() matches fpp3 2x4-MA reference values\n"
+
+
+# ---------------------------------------------------------------------
+# Test 2: trend_component() with an ODD seasonal period (m=3) must
+# reproduce a plain centered m-MA -- no doubling -- which is exactly
+# hand-computable.
+# ---------------------------------------------------------------------
+nulldata 5
+setobs 3 2020:1
+series y = {2, 4, 6, 8, 10}
+series trend = trend_component(y)
+
+assert(abs(trend[2] - 4) < 1.0e-9)
+assert(abs(trend[3] - 6) < 1.0e-9)
+assert(abs(trend[4] - 8) < 1.0e-9)
+assert(ok(trend[1]) == 0)
+assert(ok(trend[5]) == 0)
+
+printf "PASS: trend_component() matches plain centered 3-MA for odd frequency\n"
+
+
+# ---------------------------------------------------------------------
+# Test 3: full decomposition() on a noise-free synthetic series with an
+# exact linear trend and an exact, already-centered seasonal pattern
+# must recover both components exactly and leave a zero remainder
+# wherever the trend is defined.
+# ---------------------------------------------------------------------
+nulldata 16
+setobs 4 2020:1
+series trend_true = 100 + 2*seq(1,16)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true
+
+list L = decomposition(y, FALSE)
+
+loop t = 3..14 -q
+    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
+    assert(abs(season[t] - season_true[t]) < 1.0e-6)
+    assert(abs(remainder[t]) < 1.0e-6)
+endloop
+
+printf "PASS: decomposition() exactly recovers a known trend+seasonal pattern\n"
+
+
+# ---------------------------------------------------------------------
+# Test 4: the seasonal component must sum to (approximately) zero over
+# one full cycle -- the classical decomposition method requires the
+# seasonal indices to be centered.
+# ---------------------------------------------------------------------
+matrix seasonal_cycle = aggregate(season, lincomb(seasonals(), seq(1,$pd)), mean)[,3]
+assert(abs(sumc(seasonal_cycle)) < 1.0e-6)
+
+printf "PASS: seasonal component sums to zero over one cycle\n"
+
+
+printf "\nAll decomposition.inp tests passed.\n"
