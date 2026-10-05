@@ -5,7 +5,7 @@ string DATADIR = "/home/admin-tarassow/git/forecasting_principles/data/gdt"
 
 open "@DATADIR/aus_production.gdt" --preserve
 
-include stl.inp --force
+#include stl.inp --force
 include decomposition.inp --force
 series y = Electricity
 
@@ -18,7 +18,24 @@ else
     list L = decomposition(y, FALSE)
 endif
 L += y
+
+print L --head=10
+print L --tail=10
 scatters L --output=display
+
+# Classical decomposition with trend extrapolation: fills in the NAs
+# that trend_component()'s moving average otherwise leaves at both
+# ends of the series (compare against the trend/remainder columns
+# above, which have NAs at the head/tail). The third argument is the
+# number of extra points (beyond the minimum of 1) used in the OLS fit
+# at each edge -- a wider window gives a smoother, less noise-sensitive
+# extrapolation.
+list Lext = decomposition(y, FALSE, 3)
+print Lext --head=10
+print Lext --tail=10
+scatters Lext --output=display
+stop
+
 
 # STL decomposition
 list L = empty
