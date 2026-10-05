@@ -34,7 +34,7 @@ list Lext = decomposition(y, FALSE, 3)
 print Lext --head=10
 print Lext --tail=10
 scatters Lext --output=display
-stop
+
 
 
 # STL decomposition
