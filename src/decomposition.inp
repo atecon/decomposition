@@ -1,7 +1,19 @@
 function list decomposition (const series y,
-                             const bool multiplicative[FALSE])
+                             const bool multiplicative[FALSE],
+                             const int extrapolate_trend[0])
     /* Classical decomposition of a time-series.
-    https://otexts.com/fpp2/classical-decomposition.html */
+    https://otexts.com/fpp2/classical-decomposition.html
+
+    extrapolate_trend: if > 0, linearly extrapolate the trend-cycle
+    into the NAs left at both ends by the moving average in
+    trend_component(), using OLS on the nearest (extrapolate_trend+1)
+    valid trend points at each end. This also removes the
+    corresponding NAs from detrended/season/remainder, since they are
+    all computed downstream of trend. Mirrors the extrapolate_trend
+    parameter of Python's statsmodels.tsa.seasonal.seasonal_decompose();
+    R's stats::decompose() (which fpp3's classical_decomposition() wraps)
+    has no equivalent and always leaves the edge NAs in place, which is
+    this function's default (extrapolate_trend=0) behavior too. */
 
     list L = empty
     scalar Torig = $nobs
@@ -22,6 +34,7 @@ function list decomposition (const series y,
     endif
 
     series trend = trend_component(y)
+    trend = extrapolate_trend_component(trend, extrapolate_trend)
     series detrended = detrended_component(y, trend, multiplicative)
     series season = season_component(detrended, multiplicative)
     series remainder = remainder_component(y, trend, season, multiplicative)
@@ -104,4 +117,74 @@ function series trend_component (const series y)
     series trend = movavg(y, $pd, 1)
 
     return trend
+end function
+
+function series extrapolate_trend_component (series trend, const int n)
+    /* Linearly extrapolate trend into the NAs left at both ends by
+    trend_component()'s moving average, via OLS on the nearest (n+1)
+    valid points at each end. Mirrors statsmodels'
+    seasonal_decompose(..., extrapolate_trend=n) / its internal
+    _extrapolate_trend() helper. A no-op when n <= 0 (the default),
+    which preserves the previous behavior of leaving the edge NAs in
+    place -- matching R's stats::decompose(), which has no equivalent
+    option.
+
+    In plain terms:
+        find the first and last non-missing trend index (front, back)
+        if there's a gap before front:
+            fit a line through the nearest (n+1) valid trend points
+            starting at front, and use it to fill trend[1 .. front-1]
+        if there's a gap after back:
+            fit a line through the nearest (n+1) valid trend points
+            ending at back, and use it to fill trend[back+1 .. T]
+
+    Implemented with matrices and mols() rather than the ols command:
+    `set skip_missing off` makes {trend} convert the series to a
+    matrix that keeps NAs as NaN placeholders (instead of silently
+    dropping those rows, which is gretl's default for series-to-matrix
+    conversion), so the matrix stays the same length as the series and
+    "which positions are missing" can be read off directly with ok().
+    The two edge fits then become plain matrix regressions (mols) and
+    the fill-in is a single matrix multiplication, rather than a
+    manual per-observation loop. This setting is local to the
+    function call and does not affect the caller. */
+
+    if n <= 0
+        return trend
+    endif
+
+    set skip_missing off
+    scalar T = $nobs
+    matrix idx = seq(1, T)'
+    matrix y = {trend}
+    matrix valid = ok(y)
+
+    # indices of all valid (non-missing) trend points; the first and
+    # last of these are the front/back edges of the valid region
+    matrix valid_idx = selifr(idx, valid)
+    if rows(valid_idx) == 0
+        # trend has no valid values at all -- nothing to extrapolate
+        return trend
+    endif
+    scalar front = valid_idx[1]
+    scalar back = valid_idx[rows(valid_idx)]
+
+    if front > 1
+        scalar front_last = min(front + n, back)
+        matrix X = idx[front:front_last] ~ ones(front_last - front + 1, 1)
+        matrix b = mols(y[front:front_last], X)
+        matrix Xfill = idx[1:front-1] ~ ones(front - 1, 1)
+        y[1:front-1] = Xfill * b
+    endif
+
+    if back < T
+        scalar back_first = max(front, back - n)
+        matrix X2 = idx[back_first:back] ~ ones(back - back_first + 1, 1)
+        matrix b2 = mols(y[back_first:back], X2)
+        matrix Xfill2 = idx[back+1:T] ~ ones(T - back, 1)
+        y[back+1:T] = Xfill2 * b2
+    endif
+
+    series result = y
+    return result
 end function
