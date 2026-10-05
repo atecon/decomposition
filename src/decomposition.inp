@@ -28,9 +28,9 @@ function list decomposition (const series y,
 end function
 
 function series remainder_component (const series y,
-                                    const series trend,
-                                    const series season,
-                                    const bool multiplicative)
+                                     const series trend,
+                                     const series season,
+                                     const bool multiplicative)
     /* Compute the remainder component. */
 
     if multiplicative
@@ -41,7 +41,7 @@ function series remainder_component (const series y,
 end function
 
 function series season_component (const series detrended,
-                                 const bool multiplicative)
+                                  const bool multiplicative)
     /* Compute seasonal component. */
 
     matrix m = seasonal_means(detrended)
@@ -59,8 +59,7 @@ function series season_component (const series detrended,
 end function
 
 function matrix seasonal_means (const series detrended)
-    /* Compute seasonal averages based on detrended series.
-    Clever idea from Oleh. */
+    /* Compute seasonal averages based on detrended series. Clever idea from Oleh. */
 
     series season_id = lincomb(seasonals(), seq(1, $pd))
     # mean values for each season id (january, feb etc)
@@ -70,8 +69,8 @@ end function
 
 
 function series detrended_component (const series y,
-                                const series trend,
-                                const bool multiplicative)
+                                     const series trend,
+                                     const bool multiplicative)
     /* Compute detrended component */
 
     if multiplicative
