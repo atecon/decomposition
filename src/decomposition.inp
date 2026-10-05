@@ -3,7 +3,7 @@ function list decomposition (const series y,
     /* Classical decomposition of a time-series.
     https://otexts.com/fpp2/classical-decomposition.html */
 
-    list L = null
+    list L = empty
     smpl y --contiguous
     scalar frequency = $pd
     scalar T = nobs(y)
