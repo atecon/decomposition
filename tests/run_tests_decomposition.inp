@@ -74,4 +74,72 @@ assert(abs(sumc(seasonal_cycle)) < 1.0e-6)
 printf "PASS: seasonal component sums to zero over one cycle\n"
 
 
+# ---------------------------------------------------------------------
+# Test 5: extrapolate_trend_component() must fill in exactly the
+# previously-NA edge positions of the beer-production trend (Test 1's
+# series) and leave the already-valid interior values unchanged.
+# ---------------------------------------------------------------------
+nulldata 6
+setobs 4 1992:1
+series beer = {443, 410, 420, 532, 433, 421}
+series trend = trend_component(beer)
+series trend_ext = extrapolate_trend_component(trend, 2)
+
+assert(ok(trend_ext[1]))
+assert(ok(trend_ext[2]))
+assert(abs(trend_ext[3] - trend[3]) < 1.0e-9)
+assert(abs(trend_ext[4] - trend[4]) < 1.0e-9)
+assert(ok(trend_ext[5]))
+assert(ok(trend_ext[6]))
+
+printf "PASS: extrapolate_trend_component() fills edge NAs and preserves interior values\n"
+
+
+# ---------------------------------------------------------------------
+# Test 6: on an exact linear trend (no noise), the OLS extrapolation
+# must recover the true line exactly at the previously-NA edges, since
+# OLS on perfectly linear points has zero residual.
+# ---------------------------------------------------------------------
+nulldata 16
+setobs 4 2020:1
+series trend_true = 100 + 2*seq(1,16)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true
+
+list L = decomposition(y, FALSE, 2)
+
+loop t = 1..16 -q
+    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
+    assert(abs(remainder[t]) < 1.0e-6)
+endloop
+assert(sum(ok(trend)) == $nobs)
+assert(sum(ok(remainder)) == $nobs)
+
+printf "PASS: decomposition() with extrapolate_trend exactly recovers edge trend values and leaves no NAs\n"
+
+
+# ---------------------------------------------------------------------
+# Test 7: extrapolate_trend defaults to 0 (off), so decomposition()
+# called without it must reproduce Test 3's results unchanged --
+# confirming no regression for existing callers.
+# ---------------------------------------------------------------------
+nulldata 16
+setobs 4 2020:1
+series trend_true = 100 + 2*seq(1,16)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true
+
+list L = decomposition(y, FALSE)
+
+loop t = 3..14 -q
+    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
+endloop
+assert(ok(trend[1]) == 0)
+assert(ok(trend[2]) == 0)
+assert(ok(trend[15]) == 0)
+assert(ok(trend[16]) == 0)
+
+printf "PASS: extrapolate_trend defaults to off, preserving prior edge-NA behavior\n"
+
+
 printf "\nAll decomposition.inp tests passed.\n"
