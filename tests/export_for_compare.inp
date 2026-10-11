@@ -1,9 +1,11 @@
 # Exports the gretl results used by tests/compare_statsmodels.py.
+# Column prefixes: c_ classical, e_ classical with trend extrapolation,
+# s_ STL, r_ robust STL.
 # Run from the repo root: gretlcli -b tests/export_for_compare.inp
 set verbose off
 open "/home/admin-tarassow/git/forecasting_principles/data/gdt/aus_production.gdt" --preserve
-include src/stl.inp --force
 include src/decomposition.inp --force
+include src/stl.inp --force
 series y = Electricity
 bundle o1 = defbundle("multiplicative", 0)
 bundle M = clc_decompose(y, o1)
@@ -15,8 +17,12 @@ bundle E = clc_decompose(y, o2)
 series e_trend = E.trend
 series e_season = E.season
 series e_rem = E.remainder
-list S = stl_decompose(y, 13, 0, 0, 0, 0, 1)
-series s_trend = S[1]
-series s_season = S[2]
-series s_rem = S[3]
-store "tests/gretl_output.csv" y c_trend c_season c_rem e_trend e_season e_rem s_trend s_season s_rem
+bundle S = stl_decompose(y, defbundle("s_window", 13))
+series s_trend = S.trend
+series s_season = S.season
+series s_rem = S.remainder
+bundle R = stl_decompose(y, defbundle("s_window", 13, "robust", 1))
+series r_trend = R.trend
+series r_season = R.season
+series r_rem = R.remainder
+store "tests/gretl_output.csv" y c_trend c_season c_rem e_trend e_season e_rem s_trend s_season s_rem r_trend r_season r_rem
