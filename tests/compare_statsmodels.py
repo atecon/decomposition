@@ -16,7 +16,11 @@ python3 -W ignore tests/compare_statsmodels.py \
   tests/gretl_output.csv
 ```
 """
+import os
 import sys
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import pandas as pd
 from statsmodels.tsa.seasonal import STL, seasonal_decompose
 
@@ -27,6 +31,9 @@ S_WINDOW = 13
 # gretl's stl_decompose defaults when robust: inner=1, outer=5
 # (statsmodels defaults to inner=2, outer=15)
 INNER, OUTER = 1, 5
+PNG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                   "classical_comparison.png")
+BLUE, ORANGE = "#2a78d6", "#eb6834"  # categorical slots 1 and 2
 
 
 def frame(trend, season, resid, y):
@@ -60,6 +67,39 @@ def compare(gretl_csv, results):
                   f"mean={d.mean():12.6f} NaN-pattern mismatches={nan_mismatch}")
 
 
+def plot_classical(gretl_csv, results, out=PNG):
+    """3x2 grid: rows = trend/season/remainder, columns = plain and
+    extrapolated classical decomposition. Each subplot overlays
+    statsmodels (solid) and gretl (dashed)."""
+    g = pd.read_csv(gretl_csv)
+    g.index = pd.PeriodIndex(g["obs"], freq="Q")
+    x = g.index.to_timestamp()
+    cols = [("c", "Classical"), ("e", "Classical, extrapolate_trend=3")]
+    comps = [("trend", "trend"), ("season", "season"),
+             ("remainder", "rem")]
+    fig, axes = plt.subplots(3, 2, figsize=(13, 9), sharex=True)
+    for j, (pre, title) in enumerate(cols):
+        for i, (comp, gcol) in enumerate(comps):
+            ax = axes[i, j]
+            ax.plot(x, results[pre][comp].values, color=BLUE, lw=2.5,
+                    label="statsmodels")
+            ax.plot(x, g[f"{pre}_{gcol}"].values, color=ORANGE, lw=1.2,
+                    ls="--", label="gretl")
+            if i == 0:
+                ax.set_title(title)
+            if j == 0:
+                ax.set_ylabel(comp)
+            ax.grid(alpha=0.25)
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+    axes[0, 0].legend(frameon=False, loc="upper left")
+    fig.suptitle("aus_production: Electricity -- statsmodels vs gretl")
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print(f"\nPlot saved to {out}")
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else CSV
     gretl_csv = sys.argv[2] if len(sys.argv) > 2 else None
@@ -86,7 +126,9 @@ def main():
     show(f"STL (seasonal={S_WINDOW}, robust={ROBUST})", fs)
 
     if gretl_csv:
-        compare(gretl_csv, {"c": fc, "e": fe, "s": fs})
+        res = {"c": fc, "e": fe, "s": fs}
+        compare(gretl_csv, res)
+        plot_classical(gretl_csv, res)
 
 
 if __name__ == "__main__":
