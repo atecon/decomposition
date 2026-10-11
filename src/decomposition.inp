@@ -1,36 +1,83 @@
-function list decomposition (const series y,
-                             const bool multiplicative[FALSE])
+function bundle default_values (void)
+    /* Set default values for clc_decompose()'s options bundle. */
+
+    bundle self = defbundle()
+    scalar self.multiplicative = FALSE
+    scalar self.extrapolate_trend = 0
+
+    return self
+end function
+
+function bundle set_bundle_and_get_defaults (bundle opts[null])
+    /* Compile self bundle by merging eventual information
+    from 'opts' bundle. */
+
+    if !exists(opts)
+        bundle opts = defbundle()
+    endif
+
+    bundle self = default_values()
+    self = opts + self          # override defaults
+
+    return self
+end function
+
+function bundle clc_decompose (const series y,
+                               bundle opts[null])
     /* Classical decomposition of a time-series.
-    https://otexts.com/fpp2/classical-decomposition.html */
+    https://otexts.com/fpp2/classical-decomposition.html
 
-    list L = null
+    opts.multiplicative: additive (FALSE, default) or multiplicative
+    decomposition.
+
+    opts.extrapolate_trend: if > 0, linearly extrapolate the
+    trend-cycle into the NAs left at both ends by the moving average
+    in trend_component(), using OLS on the nearest
+    (extrapolate_trend+1) valid trend points at each end. This also
+    removes the corresponding NAs from detrended/season/remainder,
+    since they are all computed downstream of trend. Mirrors the
+    extrapolate_trend parameter of Python's
+    statsmodels.tsa.seasonal.seasonal_decompose(); R's
+    stats::decompose() (which fpp3's classical_decomposition() wraps)
+    has no equivalent and always leaves the edge NAs in place, which
+    is this function's default (extrapolate_trend=0) behavior too. */
+
+    bundle self = set_bundle_and_get_defaults(opts)
+
+    scalar Torig = $nobs
     smpl y --contiguous
-    scalar frequency = $pd
-    scalar T = nobs(y)
+    scalar T = $nobs
+    if T < Torig
+        printf "Warning: %d missing observations were ignored.\n", (Torig - T)
+    endif
+    scalar self.frequency = $pd
+    scalar self.nobs = T
 
-    if frequency == 1
-        printf "Error: Time-series must have seasonal frequency.\n"
-        return L
-    endif
-    if T < 2 * frequency
-        printf "Error: Time-series must have at least %d valid observations.\n", 2*frequency
-        return L
-    endif
+    errorif(self.frequency == 1, "Time-series must have seasonal frequency.")
+    errorif(T < 2 * self.frequency, \
+            sprintf("Time-series must have at least %d valid observations.", 2 * self.frequency))
 
     series trend = trend_component(y)
-    series detrended = detrended_component(y, trend, multiplicative)
-    series season = season_component(detrended, multiplicative)
-    series remainder = remainder_component(y, trend, season, multiplicative)
+    trend = extrapolate_trend_component(trend, self.extrapolate_trend)
+    series detrended = detrended_component(y, trend, self.multiplicative)
+    series season = season_component(detrended, self.multiplicative)
+    series remainder = remainder_component(y, trend, season, self.multiplicative)
+    setinfo trend --description="Trend-cycle component (classical decomposition)" --graph-name="Trend-cycle"
+    setinfo season --description="Seasonal component (classical decomposition)" --graph-name="Seasonal"
+    setinfo remainder --description="Remainder component (classical decomposition)" --graph-name="Remainder"
 
-    list L += trend season remainder
+    series self.trend = trend
+    series self.season = season
+    series self.remainder = remainder
+    series self.y = y
 
-    return L
+    return self
 end function
 
 function series remainder_component (const series y,
-                                    const series trend,
-                                    const series season,
-                                    const bool multiplicative)
+                                     const series trend,
+                                     const series season,
+                                     const bool multiplicative)
     /* Compute the remainder component. */
 
     if multiplicative
@@ -41,7 +88,7 @@ function series remainder_component (const series y,
 end function
 
 function series season_component (const series detrended,
-                                 const bool multiplicative)
+                                  const bool multiplicative)
     /* Compute seasonal component. */
 
     matrix m = seasonal_means(detrended)
@@ -59,8 +106,7 @@ function series season_component (const series detrended,
 end function
 
 function matrix seasonal_means (const series detrended)
-    /* Compute seasonal averages based on detrended series.
-    Clever idea from Oleh. */
+    /* Compute seasonal averages based on detrended series. Clever idea from Oleh. */
 
     series season_id = lincomb(seasonals(), seq(1, $pd))
     # mean values for each season id (january, feb etc)
@@ -70,8 +116,8 @@ end function
 
 
 function series detrended_component (const series y,
-                                const series trend,
-                                const bool multiplicative)
+                                     const series trend,
+                                     const bool multiplicative)
     /* Compute detrended component */
 
     if multiplicative
@@ -84,12 +130,208 @@ function series detrended_component (const series y,
 end function
 
 function series trend_component (const series y)
-    /* Compute trend component */
+    /* Compute the trend-cycle component via a centered moving average,
+    per https://otexts.com/fpp3/classical-decomposition.html (Step 1):
+    an m-MA if the seasonal period m ($pd) is odd, or a 2xm-MA if m is
+    even. gretl's movavg(x, p, control) with a non-zero control already
+    implements the full centered procedure for either case -- for even
+    p this is the two-stage "m-MA then 2-MA of that" construction, not
+    a plain (2p)-term average, so no manual doubling of p is needed or
+    correct. Verified against the worked beer-production example in
+    the fpp3 textbook (Table 3.2): movavg(beer, 4, 1) reproduces the
+    published 2x4-MA column exactly. */
 
-    scalar p = $pd
-    # multiply by 2 for even frequencies
-    p = ($pd == 4 || $pd == 12 || $pd == 24) ? p*2 : p
-    series trend = movavg(y, p, 1)
+    series trend = movavg(y, $pd, 1)
 
     return trend
+end function
+
+function series extrapolate_trend_component (series trend, const int n)
+    /* Linearly extrapolate trend into the NAs left at both ends by
+    trend_component()'s moving average, via OLS on the nearest (n+1)
+    valid points at each end. Mirrors statsmodels'
+    seasonal_decompose(..., extrapolate_trend=n) / its internal
+    _extrapolate_trend() helper. A no-op when n <= 0 (the default),
+    which preserves the previous behavior of leaving the edge NAs in
+    place -- matching R's stats::decompose(), which has no equivalent
+    option.
+
+    In plain terms:
+        find the first and last non-missing trend index (front, back)
+        if there's a gap before front:
+            fit a line through the nearest (n+1) valid trend points
+            starting at front, and use it to fill trend[1 .. front-1]
+        if there's a gap after back:
+            fit a line through the nearest (n+1) valid trend points
+            ending at back, and use it to fill trend[back+1 .. T]
+
+    Implemented with matrices and mols() rather than the ols command:
+    `set skip_missing off` makes {trend} convert the series to a
+    matrix that keeps NAs as NaN placeholders (instead of silently
+    dropping those rows, which is gretl's default for series-to-matrix
+    conversion), so the matrix stays the same length as the series and
+    "which positions are missing" can be read off directly with ok().
+    The two edge fits then become plain matrix regressions (mols) and
+    the fill-in is a single matrix multiplication, rather than a
+    manual per-observation loop. This setting is local to the
+    function call and does not affect the caller. */
+
+    if n <= 0
+        return trend
+    endif
+
+    set skip_missing off
+    scalar T = $nobs
+    matrix idx = seq(1, T)'
+    matrix y = {trend}
+    matrix valid = ok(y)
+
+    # indices of all valid (non-missing) trend points; the first and
+    # last of these are the front/back edges of the valid region
+    matrix valid_idx = selifr(idx, valid)
+    if rows(valid_idx) == 0
+        # trend has no valid values at all -- nothing to extrapolate
+        return trend
+    endif
+    scalar front = valid_idx[1]
+    scalar back = valid_idx[rows(valid_idx)]
+
+    if front > 1
+        scalar front_last = min(front + n, back)
+        matrix X = idx[front:front_last] ~ ones(front_last - front + 1, 1)
+        matrix b = mols(y[front:front_last], X)
+        matrix Xfill = idx[1:front-1] ~ ones(front - 1, 1)
+        y[1:front-1] = Xfill * b
+    endif
+
+    if back < T
+        scalar back_first = max(front, back - n)
+        matrix X2 = idx[back_first:back] ~ ones(back - back_first + 1, 1)
+        matrix b2 = mols(y[back_first:back], X2)
+        matrix Xfill2 = idx[back+1:T] ~ ones(T - back, 1)
+        y[back+1:T] = Xfill2 * b2
+    endif
+
+    series result = y
+    return result
+end function
+
+
+function bundle plot_default_values (void)
+    /* Set default values for clc_plot()'s options bundle. */
+
+    bundle self = defbundle()
+    string self.output = ""         # empty: show plot on screen
+    string self.title = ""          # empty: no overall title
+    scalar self.width = 800
+    scalar self.height = 900
+    scalar self.linewidth = 1.0
+    scalar self.monochrome = FALSE
+    scalar self.grid = TRUE
+
+    return self
+end function
+
+function scalar plot_decompose (const series target,
+                                const bundle Model,
+                                bundle opts[null])
+    /* Plot the components of a classical decomposition as a grid plot
+    with three rows: (1) actual and trend series, (2) seasonal
+    component, (3) remainder component. The seasonal and the remainder
+    subplots include a horizontal reference line at zero (additive
+    model) or one (multiplicative model).
+
+    Model: bundle returned by clc_decompose().
+
+    opts.output: path+filename of the output file; if not set or empty,
+    the plot is shown on screen.
+    opts.width, opts.height: size of the grid plot in pixels.
+    opts.title: overall title of the plot (default: none).
+    opts.linewidth: line width (default: 1.0).
+    opts.monochrome: black lines only (default: FALSE).
+    opts.grid: show grid lines (default: TRUE).
+
+    Returns 0 if no error occurs, otherwise 1. */
+
+    # check the input bundle
+    strings required = defarray("trend", "season", "remainder", "multiplicative")
+    loop i = 1..nelem(required)
+        if !inbundle(Model, required[i])
+            printf "Error: 'Model' is not a bundle returned by clc_decompose().\n"
+            return 1
+        endif
+    endloop
+    if !exists(opts)
+        bundle opts = defbundle()
+    endif
+    bundle self = plot_default_values()
+    self = opts + self          # override defaults
+
+    series trend = Model.trend
+    series season = Model.season
+    series remainder = Model.remainder
+    series ref = Model.multiplicative == TRUE ? 1 : 0   # reference line
+
+    list Ltrend = target trend
+    list Lseason = season ref
+    list Lremainder = remainder ref
+
+    # line style: first series, second series (trend or reference line)
+    scalar lw = self.linewidth
+    string st1 = sprintf("set linetype 1 lw %g", lw)
+    string st2 = sprintf("set linetype 2 lw %g", lw)
+    string ref_st = "set linetype 2 dt 2 lw 1"
+    if self.monochrome
+        st1 = sprintf("set linetype 1 lc rgb 'black' lw %g", lw)
+        st2 = sprintf("set linetype 2 lc rgb 'black' dt 2 lw %g", lw)
+        ref_st = "set linetype 2 lc rgb 'black' dt 3 lw 1"
+    endif
+    string grid_st = self.grid ? "set grid" : "unset grid"
+
+    # compute y-axis ranges for the seasonal and remainder subplots, to avoid excessive whitespace
+    scalar ref0 = Model.multiplicative == TRUE ? 1 : 0
+    scalar max_abs_remainder = max(abs(remainder - ref0))
+    scalar max_abs_season = max(abs(season - ref0))
+    scalar season_lo = ref0 - 1.025 * max_abs_season
+    scalar season_hi = ref0 + 1.025 * max_abs_season
+    scalar rem_lo = ref0 - 1.025 * max_abs_remainder
+    scalar rem_hi = ref0 + 1.025 * max_abs_remainder
+
+    strings Plots = array(3)
+
+    plot Ltrend
+        options time-series with-lines single-yaxis
+        literal set title "Data and trend-cycle"
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", st2
+    end plot --outbuf=Plots[1]
+
+    plot Lseason
+        options time-series with-lines single-yaxis
+        literal set title "Seasonal"
+        literal set nokey
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", ref_st
+        printf "set yrange [%g:%g]", season_lo, season_hi
+    end plot --outbuf=Plots[2]
+
+    plot Lremainder
+        options time-series with-lines single-yaxis
+        literal set title "Remainder"
+        literal set nokey
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", ref_st
+        printf "set yrange [%g:%g]", rem_lo, rem_hi
+    end plot --outbuf=Plots[3]
+
+    string dest = (strlen(self.output) > 0) ? self.output : "display"
+    string ttl = self.title
+
+    catch gridplot Plots --rows=3 --width=self.width --height=self.height \
+          --title="@ttl" --output="@dest"
+
+    return $error ? 1 : 0
 end function
