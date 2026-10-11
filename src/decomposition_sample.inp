@@ -5,8 +5,8 @@ string DATADIR = "/home/admin-tarassow/git/forecasting_principles/data/gdt"
 
 open "@DATADIR/aus_production.gdt" --preserve
 
-#include stl.inp --force
-include decomposition.inp --force
+#include stl.inp
+include decomposition.inp
 series y = Electricity
 
 # Classical decomposition
@@ -39,10 +39,13 @@ series trend_ext = ModelExt.trend
 series season_ext = ModelExt.season
 series remainder_ext = ModelExt.remainder
 list Lext = trend_ext season_ext remainder_ext
+Lext += y
+
 print Lext --head=10
 print Lext --tail=10
 scatters Lext --output=display
 
+stop
 
 
 # STL decomposition
