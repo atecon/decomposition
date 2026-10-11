@@ -2,16 +2,21 @@ clear
 set verbose off
 open hamilton -q -p
 
+include decomposition.inp --force
 include stl.inp --force
 
 series y = PZUNEW
 
-scalar ROBUST = 0
+scalar ROBUST = FALSE
 
-if ROBUST
-    list L = stl_decompose(y, 13, 0, 0, 0, 0, TRUE)
-else
-    list L = stl_decompose(y, 13)
-endif
+bundle opts = defbundle("s_window", 13, "robust", ROBUST)
+bundle Model = stl_decompose(y, opts)
+
+series trend = Model.trend
+series season = Model.season
+series remainder = Model.remainder
+list L = trend season remainder
 L += y
 scatters L --output=display
+
+scalar err = plot_decompose(y, Model)
