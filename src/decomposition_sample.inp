@@ -32,7 +32,13 @@ scatters L --output=display
 # number of extra points (beyond the minimum of 1) used in the OLS fit
 # at each edge -- a wider window gives a smoother, less noise-sensitive
 # extrapolation.
-list Lext = decomposition(y, FALSE, 3)
+bundle opts_ext = defbundle("multiplicative", MULTIPLICATIVE, "extrapolate_trend", 3)
+bundle ModelExt = clc_decompose(y, opts_ext)
+
+series trend_ext = ModelExt.trend
+series season_ext = ModelExt.season
+series remainder_ext = ModelExt.remainder
+list Lext = trend_ext season_ext remainder_ext
 print Lext --head=10
 print Lext --tail=10
 scatters Lext --output=display
