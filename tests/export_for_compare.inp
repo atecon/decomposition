@@ -1,0 +1,22 @@
+# Exports the gretl results used by tests/compare_statsmodels.py.
+# Run from the repo root: gretlcli -b tests/export_for_compare.inp
+set verbose off
+open "/home/admin-tarassow/git/forecasting_principles/data/gdt/aus_production.gdt" --preserve
+include src/stl.inp --force
+include src/decomposition.inp --force
+series y = Electricity
+bundle o1 = defbundle("multiplicative", 0)
+bundle M = clc_decompose(y, o1)
+series c_trend = M.trend
+series c_season = M.season
+series c_rem = M.remainder
+bundle o2 = defbundle("multiplicative", 0, "extrapolate_trend", 3)
+bundle E = clc_decompose(y, o2)
+series e_trend = E.trend
+series e_season = E.season
+series e_rem = E.remainder
+list S = stl_decompose(y, 13, 0, 0, 0, 0, 1)
+series s_trend = S[1]
+series s_season = S[2]
+series s_rem = S[3]
+store "tests/gretl_output.csv" y c_trend c_season c_rem e_trend e_season e_rem s_trend s_season s_rem
