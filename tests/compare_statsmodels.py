@@ -8,6 +8,13 @@ Series: Electricity from aus_production.csv (quarterly, period 4).
   3. STL, seasonal window 13, robust
 
 Usage: python3 tests/compare_statsmodels.py [aus_production.csv [gretl_output.csv]]
+
+Example:
+```
+python3 -W ignore tests/compare_statsmodels.py \
+  /home/admin-tarassow/git/forecasting_principles/data/csv/aus_production.csv \
+  tests/gretl_output.csv
+```
 """
 import sys
 import pandas as pd
