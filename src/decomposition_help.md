@@ -46,6 +46,33 @@ For the additive model: `y = trend + season + remainder`. For the multiplicative
 **Note:** Without trend extrapolation the first and last `m/2` observations of `trend` and `remainder` are missing (`m` is the seasonal period).
 
 
+
+## plot_decompose
+
+```
+plot_decompose (series target, bundle Model, bundle opts[null])
+```
+
+Plot the components of a decomposition as a grid plot with three rows: (1) the actual series together with the trend-cycle, (2) the seasonal component and (3) the remainder component. Each subplot has its own title. The seasonal and the remainder subplots include a horizontal reference line at zero (additive model) or at one (multiplicative model).
+
+**Arguments:**
+
+- `target`: series, The series that was decomposed.
+- `Model`: bundle, Model object returned by the `clc_decompose()` function.
+- `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
+
+    * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
+    * `title`: string, Overall title of the plot (default: no title).
+    * `width`: scalar, Width of the plot in pixels (default: 800).
+    * `height`: scalar, Height of the plot in pixels (default: 900).
+    * `linewidth`: scalar, Line width (default: 1.0).
+    * `monochrome`: bool, If `TRUE`, draw black lines only. The trend-cycle and the reference lines are then distinguished by their dash pattern (default: `FALSE`).
+    * `grid`: bool, If `TRUE`, show grid lines (default: `TRUE`).
+
+**Return:** Scalar, `0` if no error occurred, otherwise `1`.
+
+
+
 # Interpretation of the components
 
 Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()`.
@@ -95,4 +122,4 @@ Plot the series. If the seasonal swings widen as the level rises, use the multip
 # Changelog
 
 * **v0.1 (October 2026)**
-    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation)
+    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation) and the plot function `plot_decomposition()`
