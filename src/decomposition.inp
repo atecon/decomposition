@@ -1,3 +1,6 @@
+# Import the STL decomposition functions
+include stl.inp
+
 function bundle default_values (void)
     /* Set default values for clc_decompose()'s options bundle. */
 
