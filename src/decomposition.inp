@@ -215,3 +215,116 @@ function series extrapolate_trend_component (series trend, const int n)
     series result = y
     return result
 end function
+
+
+function bundle plot_default_values (void)
+    /* Set default values for clc_plot()'s options bundle. */
+
+    bundle self = defbundle()
+    string self.output = ""         # empty: show plot on screen
+    string self.title = ""          # empty: no overall title
+    scalar self.width = 800
+    scalar self.height = 900
+    scalar self.linewidth = 1.0
+    scalar self.monochrome = FALSE
+    scalar self.grid = TRUE
+
+    return self
+end function
+
+function scalar plot_decompose (const series target,
+                                const bundle Model,
+                                bundle opts[null])
+    /* Plot the components of a classical decomposition as a grid plot
+    with three rows: (1) actual and trend series, (2) seasonal
+    component, (3) remainder component. The seasonal and the remainder
+    subplots include a horizontal reference line at zero (additive
+    model) or one (multiplicative model).
+
+    Model: bundle returned by clc_decompose().
+
+    opts.output: path+filename of the output file; if not set or empty,
+    the plot is shown on screen.
+    opts.width, opts.height: size of the grid plot in pixels.
+    opts.title: overall title of the plot (default: none).
+    opts.linewidth: line width (default: 1.0).
+    opts.monochrome: black lines only (default: FALSE).
+    opts.grid: show grid lines (default: TRUE).
+
+    Returns 0 if no error occurs, otherwise 1. */
+
+    # check the input bundle
+    strings required = defarray("trend", "season", "remainder", "multiplicative")
+    loop i = 1..nelem(required)
+        if !inbundle(Model, required[i])
+            printf "Error: 'Model' is not a bundle returned by clc_decompose().\n"
+            return 1
+        endif
+    endloop
+    if !exists(opts)
+        bundle opts = defbundle()
+    endif
+    bundle self = plot_default_values()
+    self = opts + self          # override defaults
+
+    series trend = Model.trend
+    series season = Model.season
+    series remainder = Model.remainder
+    series ref = Model.multiplicative == TRUE ? 1 : 0   # reference line
+
+    list Ltrend = target trend
+    list Lseason = season ref
+    list Lremainder = remainder ref
+
+    # line style: first series, second series (trend or reference line)
+    scalar lw = self.linewidth
+    string st1 = sprintf("set linetype 1 lw %g", lw)
+    string st2 = sprintf("set linetype 2 lw %g", lw)
+    string ref_st = "set linetype 2 dt 2 lw 1"
+    if self.monochrome
+        st1 = sprintf("set linetype 1 lc rgb 'black' lw %g", lw)
+        st2 = sprintf("set linetype 2 lc rgb 'black' dt 2 lw %g", lw)
+        ref_st = "set linetype 2 lc rgb 'black' dt 3 lw 1"
+    endif
+    string grid_st = self.grid ? "set grid" : "unset grid"
+    scalar max_abs_remainder = max(abs(remainder))
+    scalar max_abs_season = max(abs(season))
+
+    strings Plots = array(3)
+
+    plot Ltrend
+        options time-series with-lines single-yaxis
+        literal set title "Data and trend-cycle"
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", st2
+    end plot --outbuf=Plots[1]
+
+    plot Lseason
+        options time-series with-lines single-yaxis
+        literal set title "Seasonal"
+        literal set nokey
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", ref_st
+        printf "set yrange [%g:%g]", -1.025 * max_abs_season, 1.025 * max_abs_season
+    end plot --outbuf=Plots[2]
+
+    plot Lremainder
+        options time-series with-lines single-yaxis
+        literal set title "Remainder"
+        literal set nokey
+        printf "%s", grid_st
+        printf "%s", st1
+        printf "%s", ref_st
+        printf "set yrange [%g:%g]", -1.025 * max_abs_remainder, 1.025 * max_abs_remainder
+    end plot --outbuf=Plots[3]
+
+    string dest = (strlen(self.output) > 0) ? self.output : "display"
+    string ttl = self.title
+
+    catch gridplot Plots --rows=3 --width=self.width --height=self.height \
+          --title="@ttl" --output="@dest"
+
+    return $error ? 1 : 0
+end function
