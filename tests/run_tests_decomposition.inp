@@ -41,7 +41,7 @@ printf "PASS: trend_component() matches plain centered 3-MA for odd frequency\n"
 
 
 # ---------------------------------------------------------------------
-# Test 3: full decomposition() on a noise-free synthetic series with an
+# Test 3: full clc_decompose() on a noise-free synthetic series with an
 # exact linear trend and an exact, already-centered seasonal pattern
 # must recover both components exactly and leave a zero remainder
 # wherever the trend is defined.
@@ -52,15 +52,15 @@ series trend_true = 100 + 2*seq(1,16)'
 series season_true = lincomb(seasonals(), {5, -5, 10, -10})
 series y = trend_true + season_true
 
-list L = decomposition(y, FALSE)
+bundle Model = clc_decompose(y)
 
 loop t = 3..14 -q
-    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
-    assert(abs(season[t] - season_true[t]) < 1.0e-6)
-    assert(abs(remainder[t]) < 1.0e-6)
+    assert(abs(Model.trend[t] - trend_true[t]) < 1.0e-6)
+    assert(abs(Model.season[t] - season_true[t]) < 1.0e-6)
+    assert(abs(Model.remainder[t]) < 1.0e-6)
 endloop
 
-printf "PASS: decomposition() exactly recovers a known trend+seasonal pattern\n"
+printf "PASS: clc_decompose() exactly recovers a known trend+seasonal pattern\n"
 
 
 # ---------------------------------------------------------------------
@@ -68,7 +68,7 @@ printf "PASS: decomposition() exactly recovers a known trend+seasonal pattern\n"
 # one full cycle -- the classical decomposition method requires the
 # seasonal indices to be centered.
 # ---------------------------------------------------------------------
-matrix seasonal_cycle = aggregate(season, lincomb(seasonals(), seq(1,$pd)), mean)[,3]
+matrix seasonal_cycle = aggregate(Model.season, lincomb(seasonals(), seq(1,$pd)), mean)[,3]
 assert(abs(sumc(seasonal_cycle)) < 1.0e-6)
 
 printf "PASS: seasonal component sums to zero over one cycle\n"
@@ -106,20 +106,21 @@ series trend_true = 100 + 2*seq(1,16)'
 series season_true = lincomb(seasonals(), {5, -5, 10, -10})
 series y = trend_true + season_true
 
-list L = decomposition(y, FALSE, 2)
+bundle opts = defbundle("extrapolate_trend", 2)
+bundle Model = clc_decompose(y, opts)
 
 loop t = 1..16 -q
-    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
-    assert(abs(remainder[t]) < 1.0e-6)
+    assert(abs(Model.trend[t] - trend_true[t]) < 1.0e-6)
+    assert(abs(Model.remainder[t]) < 1.0e-6)
 endloop
-assert(sum(ok(trend)) == $nobs)
-assert(sum(ok(remainder)) == $nobs)
+assert(sum(ok(Model.trend)) == $nobs)
+assert(sum(ok(Model.remainder)) == $nobs)
 
-printf "PASS: decomposition() with extrapolate_trend exactly recovers edge trend values and leaves no NAs\n"
+printf "PASS: clc_decompose() with extrapolate_trend exactly recovers edge trend values and leaves no NAs\n"
 
 
 # ---------------------------------------------------------------------
-# Test 7: extrapolate_trend defaults to 0 (off), so decomposition()
+# Test 7: extrapolate_trend defaults to 0 (off), so clc_decompose()
 # called without it must reproduce Test 3's results unchanged --
 # confirming no regression for existing callers.
 # ---------------------------------------------------------------------
@@ -129,15 +130,15 @@ series trend_true = 100 + 2*seq(1,16)'
 series season_true = lincomb(seasonals(), {5, -5, 10, -10})
 series y = trend_true + season_true
 
-list L = decomposition(y, FALSE)
+bundle Model = clc_decompose(y)
 
 loop t = 3..14 -q
-    assert(abs(trend[t] - trend_true[t]) < 1.0e-6)
+    assert(abs(Model.trend[t] - trend_true[t]) < 1.0e-6)
 endloop
-assert(ok(trend[1]) == 0)
-assert(ok(trend[2]) == 0)
-assert(ok(trend[15]) == 0)
-assert(ok(trend[16]) == 0)
+assert(ok(Model.trend[1]) == 0)
+assert(ok(Model.trend[2]) == 0)
+assert(ok(Model.trend[15]) == 0)
+assert(ok(Model.trend[16]) == 0)
 
 printf "PASS: extrapolate_trend defaults to off, preserving prior edge-NA behavior\n"
 
