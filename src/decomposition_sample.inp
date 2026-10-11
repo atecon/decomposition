@@ -5,7 +5,7 @@ string DATADIR = "/home/admin-tarassow/git/forecasting_principles/data/gdt"
 
 open "@DATADIR/aus_production.gdt" --preserve
 
-#include stl.inp
+include stl.inp
 include decomposition.inp
 series y = Electricity
 
@@ -44,20 +44,17 @@ print Lext --head=10
 print Lext --tail=10
 
 # Plot the components
-scalar err = plot_decomposition(y, ModelExt)
+scalar err = plot_decompose(y, ModelExt)
 
 
 # STL decomposition
-list L = empty
 scalar ROBUST = TRUE
 
-if ROBUST
-    list L = stl_decompose(y, 13, 0, 0, 0, 0, ROBUST)
-else
-    list L = stl_decompose(y, 13)
-endif
-L += y
-scatters L --output=display
+bundle opts_stl = defbundle("s_window", 13, "robust", ROBUST)
+bundle ModelSTL = stl_decompose(y, opts_stl)
 
-
-
+series trend_stl = ModelSTL.trend
+series season_stl = ModelSTL.season
+series remainder_stl = ModelSTL.remainder
+list Lstl = trend_stl season_stl remainder_stl
+scalar err = plot_decompose(y, ModelSTL)
