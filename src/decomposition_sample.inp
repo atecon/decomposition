@@ -1,60 +1,42 @@
 clear
 set verbose off
+include decomposition.gfn
 
-string DATADIR = "/home/admin-tarassow/git/forecasting_principles/data/gdt"
+# Monthly airline passengers (Box-Jenkins series G)
+open bjg.gdt --quiet
+series y = g
 
-open "@DATADIR/aus_production.gdt" --preserve
 
-include stl.inp
-include decomposition.inp
-series y = Electricity
+EXAMPLE = 1  # 1: Additive classical decomposition
+            # 2: Multiplicative classical decomp. with trend extrapolation
+            # 3: STL decomposition with robust weights
 
-# Classical decomposition
-scalar MULTIPLICATIVE = FALSE
 
-bundle opts = defbundle("multiplicative", MULTIPLICATIVE)
-bundle Model = clc_decompose(y, opts)
+if EXAMPLE == 1
+    # Additive classical decomposition
+    bundle Ret = clc_decompose(y)
 
-series trend = Model.trend
-series season = Model.season
-series remainder = Model.remainder
-list L = trend season remainder
-L += y
+elif EXAMPLE == 2
+    # Multiplicative decomposition with trend extrapolation: fills in the
+    # missing values which the moving average leaves at both ends
+    bundle opts = _(multiplicative=TRUE, extrapolate_trend=3)
+    bundle Ret = clc_decompose(y, opts)
 
+elif EXAMPLE == 3
+    # STL decomposition with robust weights
+    bundle opts = _(outer=1, inner=2, robust=TRUE)
+    bundle Ret = stl_decompose(y, opts)
+endif
+
+# Retrieve the components as series
+series trend = Ret.trend
+series season = Ret.season
+series remainder = Ret.remainder
+list L = y trend season remainder
+
+# Print the first and last 10 rows of the components
 print L --head=10
 print L --tail=10
 
-# Classical decomposition with trend extrapolation: fills in the NAs
-# that trend_component()'s moving average otherwise leaves at both
-# ends of the series (compare against the trend/remainder columns
-# above, which have NAs at the head/tail). extrapolate_trend is the
-# number of extra points (beyond the minimum of 1) used in the OLS fit
-# at each edge -- a wider window gives a smoother, less noise-sensitive
-# extrapolation.
-bundle opts_ext = defbundle("multiplicative", MULTIPLICATIVE, "extrapolate_trend", 3)
-bundle ModelExt = clc_decompose(y, opts_ext)
-
-series trend_ext = ModelExt.trend
-series season_ext = ModelExt.season
-series remainder_ext = ModelExt.remainder
-list Lext = trend_ext season_ext remainder_ext
-Lext += y
-
-print Lext --head=10
-print Lext --tail=10
-
 # Plot the components
-scalar err = plot_decompose(y, ModelExt)
-
-
-# STL decomposition
-scalar ROBUST = TRUE
-
-bundle opts_stl = defbundle("s_window", 13, "robust", ROBUST)
-bundle ModelSTL = stl_decompose(y, opts_stl)
-
-series trend_stl = ModelSTL.trend
-series season_stl = ModelSTL.season
-series remainder_stl = ModelSTL.remainder
-list Lstl = trend_stl season_stl remainder_stl
-scalar err = plot_decompose(y, ModelSTL)
+scalar err = plot_decompose(y, Ret)
