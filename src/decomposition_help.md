@@ -1,6 +1,6 @@
 # decomposition Package
 
-This package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component using classical decomposition (additive or multiplicative), which is based on centered moving averages. For more information see:
+This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component using classical decomposition (additive or multiplicative), which is based on centered moving averages. For more information see:
 
 https://otexts.com/fpp3/classical-decomposition.html
 
