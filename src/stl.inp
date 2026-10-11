@@ -1,3 +1,5 @@
+# Requires decomposition.inp (shared helpers); include that file first.
+
 function series stl_index_ma (const series x, const int p)
     /* Centered simple p-term moving average via explicit lag/lead
     summation. Avoids movavg()'s undocumented, asymmetric edge/NA
@@ -155,6 +157,11 @@ function matrix stl_robustness_weights (const series remainder)
     (per gretl's funcref), so no manual NA filtering is needed. */
 
     scalar h = 6 * median(abs(remainder))
+    if h < 1.0e-12
+        # (numerically) perfect fit: nothing to down-weight
+        series ones_rw = 1
+        return {ones_rw}
+    endif
     series u = abs(remainder) / h
     series rho = (u < 1) ? (1 - u^2)^2 : 0
     return {rho}
@@ -174,11 +181,14 @@ function list stl_inner_loop (const series y,
                              const int l_window,
                              const int n_i,
                              const series rweights,
-                             const bool use_rweights)
+                             const bool use_rweights,
+                             const series trend0)
     /* Runs the STL inner loop (Steps 1-6) n_i times, starting from
-    trend = 0, and returns the resulting {trend, season} list. */
+    the trend 'trend0' (zero in the first pass; the previous trend in
+    the outer robustness passes, as in Cleveland et al.), and returns
+    the resulting {trend, season} list. */
 
-    series trend = 0
+    series trend = trend0
     series season = 0
 
     loop i = 1..n_i -q
@@ -194,68 +204,104 @@ function list stl_inner_loop (const series y,
     return Lret
 end function
 
-function list stl_decompose (const series y,
-                            int s_window,
-                            int t_window[0],
-                            int l_window[0],
-                            int inner[0],
-                            int outer[0],
-                            bool robust[FALSE])
+function bundle stl_default_values (void)
+    /* Set default values for stl_decompose()'s options bundle. */
+
+    bundle self = defbundle()
+    scalar self.s_window = 7
+    scalar self.t_window = 0        # 0: set automatically
+    scalar self.l_window = 0        # 0: set automatically
+    scalar self.inner = 0           # 0: set automatically
+    scalar self.outer = 0           # 0: set automatically
+    scalar self.robust = FALSE
+    scalar self.multiplicative = FALSE
+
+    return self
+end function
+
+function bundle stl_decompose (const series y,
+                               bundle opts[null])
     /* STL: Seasonal-Trend decomposition using Loess.
     https://otexts.com/fpp3/stl.html
     Cleveland, Cleveland, McRae & Terpenning (1990), "STL: A
-    Seasonal-Trend Decomposition Procedure Based on Loess". */
+    Seasonal-Trend Decomposition Procedure Based on Loess".
 
-    list Lout = null
+    The decomposition is additive. For a multiplicative decomposition
+    pass log(y) and transform the components back, as done with
+    Python's statsmodels.tsa.seasonal.STL().
+
+    opts.s_window: span of the loess smoother applied to each
+    cycle-subseries (seasonal window), default 7.
+    opts.t_window: span of the trend smoother; 0 (default) sets the
+    smallest odd integer >= 1.5 * m / (1 - 1.5 / s_window).
+    opts.l_window: span of the low-pass filter; 0 (default) sets the
+    smallest odd integer >= m (m: seasonal period).
+    opts.inner: number of inner loop iterations; 0 (default) sets 2.
+    opts.outer: number of outer (robustness) iterations; 0 (default)
+    sets 0 if not robust and 15 if robust.
+    opts.robust: use robustness weights to reduce the influence of
+    outliers (default FALSE). */
+
+    bundle self = set_bundle_and_get_defaults(stl_default_values(), opts)
+
+    scalar Torig = $nobs
     smpl y --contiguous
-    scalar n_p = $pd
-    scalar T = nobs(y)
-
-    if n_p == 1
-        printf "Error: Time-series must have seasonal frequency.\n"
-        return Lout
+    scalar T = $nobs
+    if T < Torig
+        printf "Warning: %d missing observations were ignored.\n", (Torig - T)
     endif
+    scalar n_p = $pd
+    scalar self.frequency = n_p
+    scalar self.nobs = T
+
     # STL's per-cycle-subseries loess smoothing (Step 2) needs each of the
     # n_p cycle-subseries (T/n_p points each) to be reasonably long, unlike
     # classical decomposition's overall 2-cycle minimum. gretl's loess()
     # has an undocumented minimum-observations requirement; empirically
     # (via gretlcli) at least ~16 points per cycle-subseries are needed
     # for it to succeed reliably.
-    scalar min_points_per_cycle = 16
-    if T < min_points_per_cycle * n_p
-        printf "Error: STL needs a longer series -- at least %d valid observations (%d full cycles) for frequency %d.\n", min_points_per_cycle * n_p, min_points_per_cycle, n_p
-        return Lout
-    endif
+    check_seasonal_series(n_p, T, 16)
+    errorif(self.s_window < 3, "opts.s_window must be at least 3.")
 
-    if l_window == 0
-        l_window = stl_nextodd(n_p)
+    if self.l_window == 0
+        self.l_window = stl_nextodd(n_p)
     endif
-    if t_window == 0
-        t_window = stl_nextodd(1.5 * n_p / (1 - 1.5 / s_window))
+    if self.t_window == 0
+        self.t_window = stl_nextodd(1.5 * n_p / (1 - 1.5 / self.s_window))
     endif
-    if inner == 0
-        inner = robust ? 1 : 2
+    if self.inner == 0
+        self.inner = 2
     endif
-    if outer == 0
-        outer = robust ? 5 : 0
+    if self.outer == 0
+        self.outer = self.robust ? 15 : 0
     endif
 
     series rweights = 1
-    list Linner = stl_inner_loop(y, n_p, s_window, t_window, l_window, inner, rweights, FALSE)
+    series zero = 0
+    list Linner = stl_inner_loop(y, n_p, self.s_window, self.t_window, \
+                                 self.l_window, self.inner, rweights, FALSE, zero)
     series trend = Linner.trend
     series season = Linner.season
 
-    loop o = 1..outer -q
+    loop o = 1..self.outer
         series remainder = y - trend - season
         matrix rw = stl_robustness_weights(remainder)
         series rweights = rw
-        list Linner = stl_inner_loop(y, n_p, s_window, t_window, l_window, inner, rweights, TRUE)
+        list Linner = stl_inner_loop(y, n_p, self.s_window, self.t_window, \
+                                     self.l_window, self.inner, rweights, TRUE, trend)
         series trend = Linner.trend
         series season = Linner.season
     endloop
 
-    series remainder = y - trend - season
+    series remainder = remainder_component(y, trend, season, FALSE)
+    setinfo trend --description="Trend-cycle component (STL decomposition)" --graph-name="Trend-cycle"
+    setinfo season --description="Seasonal component (STL decomposition)" --graph-name="Seasonal"
+    setinfo remainder --description="Remainder component (STL decomposition)" --graph-name="Remainder"
 
-    list Lout += trend season remainder
-    return Lout
+    series self.trend = trend
+    series self.season = season
+    series self.remainder = remainder
+    series self.y = y
+
+    return self
 end function
