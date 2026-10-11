@@ -46,6 +46,52 @@ For the additive model: `y = trend + season + remainder`. For the multiplicative
 **Note:** Without trend extrapolation the first and last `m/2` observations of `trend` and `remainder` are missing (`m` is the seasonal period).
 
 
+# Interpretation of the components
+
+Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()`.
+
+## Additive model
+
+```
+y = trend + season + remainder
+```
+
+- `trend`: the underlying level, in the units of `y` (e.g. units sold per month).
+- `season`: the seasonal effect in units of `y`, centered such that the indices sum to zero over one cycle. A value of `+64` for July means that July sales are on average 64 units above the underlying level. The effect is the same number of units in every year, irrespective of the level of the series.
+- `remainder`: the deviation from `trend + season` in units of `y`.
+- Seasonally adjusted series: `y - season`.
+
+The additive model is appropriate if the size of the seasonal swings stays roughly constant as the level of the series changes.
+
+## Multiplicative model
+
+```
+y = trend * season * remainder
+```
+
+- `trend`: the underlying level, in the units of `y`. It is of a similar magnitude as in the additive model.
+- `season`: a dimensionless seasonal index, centered such that the indices average to one over one cycle. A value of `1.23` for July means that July sales are on average 23% above the underlying level, whatever that level is. A value below one means that the season is weaker than average.
+- `remainder`: a dimensionless factor, fluctuating around one. A value of `0.95` means that the observation is 5% below the value expected from trend and season, a value of `1.03` means 3% above.
+- Seasonally adjusted series: `y / season`. This series is in the units of `y`.
+
+The multiplicative model is appropriate if the seasonal swings grow (or shrink) in proportion to the level of the series, i.e. if the seasonal effect is a constant percentage rather than a constant number of units. In this case, the remainder of an additive model typically becomes larger when the level of the series rises, whereas the multiplicative remainder stays at a similar relative size.
+
+## Converting the multiplicative components to units
+
+The dimensionless components can be expressed in the units of `y`:
+
+```
+seasonal effect in units = trend * (season - 1)
+remainder in units       = y - trend * season
+```
+
+In contrast to the additive model, the seasonal effect in units varies over time with the level of the trend. For instance, a seasonal index of `1.23` corresponds to `+29` units at a trend of `127` units and to `+110` units at a trend of `475` units.
+
+## Choosing between the two models
+
+Plot the series. If the seasonal swings widen as the level rises, use the multiplicative model (`multiplicative = TRUE`), otherwise use the additive model. Both are linked via logarithms: the multiplicative model for `y` is the additive model for `log(y)`, as `log(y) = log(trend) + log(season) + log(remainder)`. The multiplicative model requires strictly positive values of `y`.
+
+
 # Changelog
 
 * **v0.1 (October 2026)**
