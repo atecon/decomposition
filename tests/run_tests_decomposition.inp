@@ -2,6 +2,7 @@ set assert stop
 set verbose off
 
 include ../src/decomposition.inp --force
+include ../src/stl.inp --force
 
 # ---------------------------------------------------------------------
 # Test 1: trend_component() with an EVEN seasonal period (m=4) must
@@ -141,6 +142,75 @@ assert(ok(Model.trend[15]) == 0)
 assert(ok(Model.trend[16]) == 0)
 
 printf "PASS: extrapolate_trend defaults to off, preserving prior edge-NA behavior\n"
+
+
+# ---------------------------------------------------------------------
+# Test 8: stl_decompose() on a noise-free series with a linear trend and
+# an exact seasonal pattern must return the same bundle layout as
+# clc_decompose(), reconstruct y exactly (y = trend + season +
+# remainder), and recover trend and season closely in the interior.
+# ---------------------------------------------------------------------
+nulldata 80
+setobs 4 2000:1
+series trend_true = 100 + 2*seq(1,80)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true
+
+bundle Model = stl_decompose(y)
+
+assert(inbundle(Model, "trend") && inbundle(Model, "season") && \
+       inbundle(Model, "remainder") && inbundle(Model, "y"))
+assert(Model.frequency == 4)
+assert(Model.nobs == 80)
+assert(Model.multiplicative == 0)
+assert(Model.s_window == 7)
+assert(Model.t_window == 9)     # nextodd(1.5*4 / (1 - 1.5/7)) = nextodd(7.64)
+assert(Model.l_window == 5)
+assert(Model.inner == 2)
+assert(Model.outer == 0)
+
+series chk = y - Model.trend - Model.season - Model.remainder
+assert(maxc({abs(chk)}) < 1.0e-9)
+
+loop t = 20..60 -q
+    assert(abs(Model.trend[t] - trend_true[t]) < 0.5)
+    assert(abs(Model.season[t] - season_true[t]) < 0.5)
+endloop
+
+printf "PASS: stl_decompose() returns a consistent bundle and recovers trend and season\n"
+
+
+# ---------------------------------------------------------------------
+# Test 9: robust STL defaults (outer = 15) and reconstruction identity
+# for noisy data with an outlier.
+# ---------------------------------------------------------------------
+set seed 42
+series y_out = y + normal()
+y_out[40] = y_out[40] + 200
+
+bundle ModelR = stl_decompose(y_out, defbundle("s_window", 13, "robust", TRUE))
+
+assert(ModelR.outer == 15)
+assert(ModelR.inner == 2)
+series chk = y_out - ModelR.trend - ModelR.season - ModelR.remainder
+assert(maxc({abs(chk)}) < 1.0e-9)
+# the outlier ends up in the remainder
+assert(ModelR.remainder[40] > 150)
+
+printf "PASS: robust stl_decompose() uses default iterations and isolates an outlier\n"
+
+
+# ---------------------------------------------------------------------
+# Test 10: set_bundle_and_get_defaults() lets 'opts' override defaults
+# and works without 'opts'.
+# ---------------------------------------------------------------------
+bundle B = set_bundle_and_get_defaults(default_values(), defbundle("multiplicative", TRUE))
+assert(B.multiplicative == 1)
+assert(B.extrapolate_trend == 0)
+bundle B2 = set_bundle_and_get_defaults(default_values())
+assert(B2.multiplicative == 0)
+
+printf "PASS: set_bundle_and_get_defaults() merges defaults and options\n"
 
 
 printf "\nAll decomposition.inp tests passed.\n"
