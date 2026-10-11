@@ -287,8 +287,15 @@ function scalar plot_decompose (const series target,
         ref_st = "set linetype 2 lc rgb 'black' dt 3 lw 1"
     endif
     string grid_st = self.grid ? "set grid" : "unset grid"
-    scalar max_abs_remainder = max(abs(remainder))
-    scalar max_abs_season = max(abs(season))
+
+    # compute y-axis ranges for the seasonal and remainder subplots, to avoid excessive whitespace
+    scalar ref0 = Model.multiplicative == TRUE ? 1 : 0
+    scalar max_abs_remainder = max(abs(remainder - ref0))
+    scalar max_abs_season = max(abs(season - ref0))
+    scalar season_lo = ref0 - 1.025 * max_abs_season
+    scalar season_hi = ref0 + 1.025 * max_abs_season
+    scalar rem_lo = ref0 - 1.025 * max_abs_remainder
+    scalar rem_hi = ref0 + 1.025 * max_abs_remainder
 
     strings Plots = array(3)
 
@@ -307,7 +314,7 @@ function scalar plot_decompose (const series target,
         printf "%s", grid_st
         printf "%s", st1
         printf "%s", ref_st
-        printf "set yrange [%g:%g]", -1.025 * max_abs_season, 1.025 * max_abs_season
+        printf "set yrange [%g:%g]", season_lo, season_hi
     end plot --outbuf=Plots[2]
 
     plot Lremainder
@@ -317,7 +324,7 @@ function scalar plot_decompose (const series target,
         printf "%s", grid_st
         printf "%s", st1
         printf "%s", ref_st
-        printf "set yrange [%g:%g]", -1.025 * max_abs_remainder, 1.025 * max_abs_remainder
+        printf "set yrange [%g:%g]", rem_lo, rem_hi
     end plot --outbuf=Plots[3]
 
     string dest = (strlen(self.output) > 0) ? self.output : "display"
