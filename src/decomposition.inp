@@ -8,18 +8,30 @@ function bundle default_values (void)
     return self
 end function
 
-function bundle set_bundle_and_get_defaults (bundle opts[null])
+function bundle set_bundle_and_get_defaults (const bundle defaults,
+                                             bundle opts[null])
     /* Compile self bundle by merging eventual information
-    from 'opts' bundle. */
+    from 'opts' bundle into the 'defaults' bundle. */
 
     if !exists(opts)
         bundle opts = defbundle()
     endif
 
-    bundle self = default_values()
+    bundle self = defaults
     self = opts + self          # override defaults
 
     return self
+end function
+
+function void check_seasonal_series (const scalar frequency,
+                                     const scalar nobs,
+                                     const scalar min_cycles[2])
+    /* Raise an error if the series is not seasonal or if it holds
+    fewer than 'min_cycles' full seasonal cycles. */
+
+    errorif(frequency == 1, "Time-series must have seasonal frequency.")
+    errorif(nobs < min_cycles * frequency, \
+            sprintf("Time-series must have at least %d valid observations.", min_cycles * frequency))
 end function
 
 function bundle clc_decompose (const series y,
@@ -42,7 +54,7 @@ function bundle clc_decompose (const series y,
     has no equivalent and always leaves the edge NAs in place, which
     is this function's default (extrapolate_trend=0) behavior too. */
 
-    bundle self = set_bundle_and_get_defaults(opts)
+    bundle self = set_bundle_and_get_defaults(default_values(), opts)
 
     scalar Torig = $nobs
     smpl y --contiguous
@@ -53,9 +65,7 @@ function bundle clc_decompose (const series y,
     scalar self.frequency = $pd
     scalar self.nobs = T
 
-    errorif(self.frequency == 1, "Time-series must have seasonal frequency.")
-    errorif(T < 2 * self.frequency, \
-            sprintf("Time-series must have at least %d valid observations.", 2 * self.frequency))
+    check_seasonal_series(self.frequency, T, 2)
 
     series trend = trend_component(y)
     trend = extrapolate_trend_component(trend, self.extrapolate_trend)
