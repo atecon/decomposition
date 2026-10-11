@@ -23,7 +23,6 @@ L += y
 
 print L --head=10
 print L --tail=10
-scatters L --output=display
 
 # Classical decomposition with trend extrapolation: fills in the NAs
 # that trend_component()'s moving average otherwise leaves at both
@@ -43,9 +42,9 @@ Lext += y
 
 print Lext --head=10
 print Lext --tail=10
-scatters Lext --output=display
 
-stop
+# Plot the components
+scalar err = plot_decomposition(y, ModelExt)
 
 
 # STL decomposition
