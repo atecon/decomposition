@@ -58,7 +58,7 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 **Arguments:**
 
 - `target`: series, The series that was decomposed.
-- `Model`: bundle, Model object returned by the `clc_decompose()` function.
+- `Model`: bundle, Model object returned by the `*_decompose()` function.
 - `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
 
     * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
