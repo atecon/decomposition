@@ -133,9 +133,10 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 - `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
 
     * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
-    * `title`: string, Overall title of the plot (default: no title).
-    * `width`: scalar, Width of the plot in pixels (default: 800).
-    * `height`: scalar, Height of the plot in pixels (default: 900).
+    * `layout`: string, Arrangement of the plots (default: `vertical`). `vertical`: one grid plot with the three plots below each other. `horizontal`: one grid plot with the three plots side by side. `separate`: three individual plots (data and trend-cycle, seasonal component, remainder component). When saving separate plots to file, the suffix `_trend`, `_season` or `_remainder` is inserted before the file extension of `output`, e.g. `decomposition.png` is saved as `decomposition_trend.png`, `decomposition_season.png` and `decomposition_remainder.png`. Without `output` the plots are shown on the screen one after another.
+    * `title`: string, Overall title of the plot (default: no title). Ignored for `separate` plots, as each plot has its own title.
+    * `width`: scalar, Width of the plot in pixels. For `separate` plots, the width of each plot. Default: `800` (`vertical`), `1200` (`horizontal`) and `600` (`separate`).
+    * `height`: scalar, Height of the plot in pixels. For `separate` plots, the height of each plot. Default: `900` (`vertical`) and `400` (`horizontal` and `separate`).
     * `linewidth`: scalar, Line width (default: 1.0).
     * `monochrome`: bool, If `TRUE`, draw black lines only. The trend-cycle and the reference lines are then distinguished by their dash pattern (default: `FALSE`).
     * `grid`: bool, If `TRUE`, show grid lines (default: `TRUE`).
