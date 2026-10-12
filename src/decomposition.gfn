@@ -166,6 +166,62 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 
 
 
+## strength_trend
+
+```
+strength_trend (bundle Model)
+```
+
+Compute the strength of the trend of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+```
+
+`trend + remainder` is the seasonally adjusted series. If the trend is strong, the variation of the seasonally adjusted series is dominated by the trend and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no trend) and `1` (strong trend).
+
+**Notes:** Observations where a component is missing (e.g. at the edges of the classical decomposition) are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components, i.e. to the additive decomposition of `log(y)`.
+
+```
+bundle Model = stl_decompose(y)
+scalar FT = strength_trend(Model)
+```
+
+
+## strength_season
+
+```
+strength_season (bundle Model)
+```
+
+Compute the strength of the seasonality of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+```
+
+`season + remainder` is the detrended series. If the seasonality is strong, the variation of the detrended series is dominated by the seasonal component and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no seasonality) and `1` (strong seasonality).
+
+**Notes:** Observations where a component is missing are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components.
+
+```
+bundle Model = clc_decompose(y)
+scalar FS = strength_season(Model)
+```
+
+
 # Interpretation of the components
 
 Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()` or `stl_decompose()`. The components of `stl_decompose()` follow the additive interpretation.
@@ -215,7 +271,7 @@ Plot the series. If the seasonal swings widen as the level rises, use the multip
 # Changelog
 
 * **v0.1 (October 2026)**
-    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()` and the plot function `plot_decompose()`
+    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()`, the plot function `plot_decompose()` and the strength measures `strength_trend()` and `strength_season()`
 </help>
 <gretl-function name="clc_decompose" type="bundle">
  <params count="2">
@@ -497,6 +553,43 @@ else
 endif
 
 return $error ? 1 : 0
+</code>
+</gretl-function>
+<gretl-function name="strength_trend" type="scalar">
+ <params count="1">
+  <param name="Model" type="bundle" const="true"/>
+ </params>
+<code>/* Strength of trend, see https://otexts.com/fpp3/features.html
+(Wang, Smith &amp; Hyndman, 2006):
+
+F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+
+Model: bundle returned by clc_decompose() or stl_decompose(). For a
+multiplicative decomposition the formula is applied to the logs of
+the components, i.e. to the additive decomposition of log(y).
+
+Returns a scalar between 0 (no trend) and 1 (strong trend). */
+
+return strength_measure(Model, &quot;trend&quot;)
+</code>
+</gretl-function>
+<gretl-function name="strength_season" type="scalar">
+ <params count="1">
+  <param name="Model" type="bundle" const="true"/>
+ </params>
+<code>/* Strength of seasonality, see https://otexts.com/fpp3/features.html
+(Wang, Smith &amp; Hyndman, 2006):
+
+F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+
+Model: bundle returned by clc_decompose() or stl_decompose(). For a
+multiplicative decomposition the formula is applied to the logs of
+the components, i.e. to the additive decomposition of log(y).
+
+Returns a scalar between 0 (no seasonality) and 1 (strong
+seasonality). */
+
+return strength_measure(Model, &quot;season&quot;)
 </code>
 </gretl-function>
 <gretl-function name="stl_index_ma" type="series" private="1">
@@ -973,6 +1066,38 @@ if there's a gap before front:
       return result
 </code>
 </gretl-function>
+<gretl-function name="strength_measure" type="scalar" private="1">
+ <params count="2">
+  <param name="Model" type="bundle" const="true"/>
+  <param name="component" type="string" const="true"/>
+ </params>
+<code>/* Shared worker of strength_trend() and strength_season():
+max(0, 1 - Var(remainder) / Var(component + remainder)) evaluated on
+the observations where both series are valid (the classical
+decomposition leaves NAs at the edges). For a multiplicative
+decomposition the components are log-transformed first. */
+
+strings required = defarray(&quot;trend&quot;, &quot;season&quot;, &quot;remainder&quot;, &quot;multiplicative&quot;)
+loop foreach i required
+  errorif(!inbundle(Model, required[i]), &quot;'Model' is not a bundle returned by clc_decompose() or stl_decompose().&quot;)
+endloop
+
+series comp = Model[component]
+series rem = Model.remainder
+if Model.multiplicative
+  comp = log(comp)
+  rem = log(rem)
+endif
+series total = comp + rem
+
+smpl ok(total) --restrict
+errorif($nobs &lt; 2, &quot;At least two valid observations are required.&quot;)
+scalar v_total = var(total)
+errorif(v_total == 0, &quot;The variance of the series is zero.&quot;)
+
+return max(0, 1 - var(rem) / v_total)
+</code>
+</gretl-function>
 <gretl-function name="plot_filename" type="string" private="1">
  <params count="2">
   <param name="path" type="string" const="true"/>
@@ -1057,6 +1182,11 @@ list L = y trend season remainder
 # Print the first and last 10 rows of the components
 print L --head=10
 print L --tail=10
+
+# Strength of trend and seasonality
+scalar FT = strength_trend(Ret)
+scalar FS = strength_season(Ret)
+printf &quot;Strength of trend: %.3f, strength of seasonality: %.3f\n&quot;, FT, FS
 
 # Plot the components
 scalar err = plot_decompose(y, Ret)
