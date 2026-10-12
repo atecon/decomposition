@@ -213,4 +213,54 @@ assert(B2.multiplicative == 0)
 printf "PASS: set_bundle_and_get_defaults() merges defaults and options\n"
 
 
+# ---------------------------------------------------------------------
+# Test 11: plot_filename() inserts the suffix before the file extension.
+# ---------------------------------------------------------------------
+assert(plot_filename("plots.png", "trend") == "plots_trend.png")
+assert(plot_filename("a/b.c/out.pdf", "season") == "a/b.c/out_season.pdf")
+assert(plot_filename("out", "remainder") == "out_remainder")
+assert(plot_filename("a.b/out", "trend") == "a.b/out_trend")
+assert(plot_filename("x.tar.gz", "trend") == "x.tar_trend.gz")
+assert(plot_filename("/tmp/.hidden", "trend") == "/tmp/.hidden_trend")
+
+printf "PASS: plot_filename() inserts the suffix before the file extension\n"
+
+
+# ---------------------------------------------------------------------
+# Test 12: plot_decompose() writes the expected files for each layout
+# and rejects an invalid layout.
+# ---------------------------------------------------------------------
+nulldata 80
+setobs 4 2000:1
+series trend_true = 100 + 2*seq(1,80)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true + normal()
+bundle Model = clc_decompose(y)
+
+function scalar file_exists (const string fname)
+    # readfile() raises an error for a missing file
+    catch string content = readfile(fname)
+    return $error == 0
+end function
+
+string base = sprintf("%s/plot_test", $dotdir)
+string f_vertical = sprintf("%s_vertical.png", base)
+string f_horizontal = sprintf("%s_horizontal.png", base)
+string f_separate = sprintf("%s_separate.png", base)
+
+assert(plot_decompose(y, Model, defbundle("output", f_vertical)) == 0)
+assert(plot_decompose(y, Model, defbundle("output", f_horizontal, "layout", "horizontal")) == 0)
+assert(plot_decompose(y, Model, defbundle("output", f_separate, "layout", "separate")) == 0)
+assert(plot_decompose(y, Model, defbundle("layout", "diagonal")) == 1)
+
+assert(file_exists(f_vertical))
+assert(file_exists(f_horizontal))
+assert(!file_exists(f_separate))
+assert(file_exists(plot_filename(f_separate, "trend")))
+assert(file_exists(plot_filename(f_separate, "season")))
+assert(file_exists(plot_filename(f_separate, "remainder")))
+
+printf "PASS: plot_decompose() supports vertical, horizontal and separate layouts\n"
+
+
 printf "\nAll decomposition.inp tests passed.\n"
