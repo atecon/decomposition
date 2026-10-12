@@ -31,9 +31,11 @@ from statsmodels.tsa.seasonal import STL, seasonal_decompose
 CSV = "/home/admin-tarassow/git/forecasting_principles/data/csv/aus_production.csv"
 PERIOD = 4
 S_WINDOW = 13
-# stl_decompose() uses the statsmodels defaults (robust: inner=2,
-# outer=15; otherwise inner=2, outer=0), so no override is needed
-INNER, OUTER = None, None
+# stl_decompose() uses inner=2 (R's value for non-robust STL) in both the
+# robust and the non-robust case, and outer=0 / 15. statsmodels' default
+# for non-robust STL is inner=5, so inner is set explicitly here.
+INNER = 2
+OUTER_NONROBUST, OUTER_ROBUST = 0, 15
 HERE = os.path.dirname(os.path.abspath(__file__))
 PNG_CLASSICAL = os.path.join(HERE, "classical_comparison.png")
 PNG_STL = os.path.join(HERE, "stl_comparison.png")
@@ -125,13 +127,13 @@ def main():
 
     # gretl: stl_decompose(y, defbundle("s_window", 13))
     s = STL(y, period=PERIOD, seasonal=S_WINDOW, robust=False).fit(
-        inner_iter=INNER, outer_iter=OUTER)
+        inner_iter=INNER, outer_iter=OUTER_NONROBUST)
     fs = frame(s.trend, s.seasonal, s.resid, y)
     show(f"STL (seasonal={S_WINDOW})", fs)
 
     # gretl: stl_decompose(y, defbundle("s_window", 13, "robust", 1))
     r = STL(y, period=PERIOD, seasonal=S_WINDOW, robust=True).fit(
-        inner_iter=INNER, outer_iter=OUTER)
+        inner_iter=INNER, outer_iter=OUTER_ROBUST)
     fr = frame(r.trend, r.seasonal, r.resid, y)
     show(f"STL (seasonal={S_WINDOW}, robust)", fr)
 
