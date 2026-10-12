@@ -305,4 +305,84 @@ assert(file_exists(plot_filename(f_separate, "remainder")))
 printf "PASS: plot_decompose() supports vertical, horizontal and separate layouts\n"
 
 
+# ---------------------------------------------------------------------
+# Test: strength_trend() / strength_season() on a hand-computable
+# bundle. With trend = {1,2,3,4}, season = {1,-1,1,-1} and
+# remainder = {1,-1,-1,1}, Var(R) = 4/3, Var(T+R) = Var({2,1,2,5}) = 3
+# and Var(S+R) = Var({2,-2,0,0}) = 8/3, hence F_T = 5/9 and F_S = 1/2.
+# ---------------------------------------------------------------------
+nulldata 4
+bundle B = defbundle()
+series tmp_trend = {1, 2, 3, 4}
+series B.trend = tmp_trend
+series tmp_season = {1, -1, 1, -1}
+series B.season = tmp_season
+series tmp_remainder = {1, -1, -1, 1}
+series B.remainder = tmp_remainder
+scalar B.multiplicative = FALSE
+
+assert(abs(strength_trend(B) - 5/9) < 1.0e-9)
+assert(abs(strength_season(B) - 1/2) < 1.0e-9)
+
+# a remainder with larger variance than trend + remainder is truncated at 0
+series tmp_trend = {1, 1, 1, 1}
+series B.trend = tmp_trend
+series tmp_remainder = {1, -1, -1, 1}
+series B.remainder = tmp_remainder
+assert(strength_trend(B) == 0)
+
+printf "PASS: strength_*() match hand-computed values and truncate at zero\n"
+
+
+# ---------------------------------------------------------------------
+# Test: on the noise-free series of Test 3 the remainder is zero where
+# defined, so both measures equal one -- for classical and STL
+# decomposition, and for NA edges in the classical trend.
+# ---------------------------------------------------------------------
+nulldata 40
+setobs 4 2020:1
+series trend_true = 100 + 2*seq(1,40)'
+series season_true = lincomb(seasonals(), {5, -5, 10, -10})
+series y = trend_true + season_true
+
+bundle Mc = clc_decompose(y)
+assert(abs(strength_trend(Mc) - 1) < 1.0e-6)
+assert(abs(strength_season(Mc) - 1) < 1.0e-6)
+
+bundle Ms = stl_decompose(y)
+assert(abs(strength_trend(Ms) - 1) < 1.0e-2)
+assert(abs(strength_season(Ms) - 1) < 1.0e-2)
+
+printf "PASS: strength_*() equal 1 for a noise-free trend + season series\n"
+
+
+# ---------------------------------------------------------------------
+# Test: pure noise has neither trend nor seasonality; both measures
+# must lie in [0, 1] and be small.
+# ---------------------------------------------------------------------
+set seed 123
+series e = normal()
+bundle Mn = clc_decompose(e)
+assert(strength_trend(Mn) >= 0 && strength_trend(Mn) <= 1)
+assert(strength_season(Mn) >= 0 && strength_season(Mn) <= 1)
+assert(strength_season(Mn) < 0.5)
+
+printf "PASS: strength_*() are within [0, 1] and small for white noise\n"
+
+
+# ---------------------------------------------------------------------
+# Test: for a multiplicative decomposition the measures are computed on
+# the logs of the components, i.e. they equal those of the additive
+# decomposition of log(y).
+# ---------------------------------------------------------------------
+series ypos = exp(0.02*seq(1,40)' + 0.1*lincomb(seasonals(), {1, -1, 2, -2}) + 0.05*normal())
+bundle Mm = clc_decompose(ypos, _(multiplicative=TRUE))
+series lypos = log(ypos)
+bundle Ma = clc_decompose(lypos)
+assert(abs(strength_trend(Mm) - strength_trend(Ma)) < 0.02)
+assert(abs(strength_season(Mm) - strength_season(Ma)) < 0.02)
+
+printf "PASS: strength_*() use logs for multiplicative decompositions\n"
+
+
 printf "\nAll decomposition.inp tests passed.\n"
