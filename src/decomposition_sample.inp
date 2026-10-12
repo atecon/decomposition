@@ -1,17 +1,52 @@
 clear
 set verbose off
-open hamilton -q -p
+include decomposition.gfn
 
-include decomposition.inp --force
+# Monthly airline passengers (Box-Jenkins series G)
+open bjg.gdt --quiet
+series y = g
 
-series y = PZUNEW
 
-scalar MULTIPLICATIVE = 1
+EXAMPLE = 1  # 1: Additive classical decomposition
+            # 2: Multiplicative classical decomp. with trend extrapolation
+            # 3: STL decomposition with robust weights
 
-if MULTIPLICATIVE
-    list L = decomposition(y, TRUE)
-else
-    list L = decomposition(y, FALSE)
+
+if EXAMPLE == 1
+    # Additive classical decomposition
+    bundle Ret = clc_decompose(y)
+
+elif EXAMPLE == 2
+    # Multiplicative decomposition with trend extrapolation: fills in the
+    # missing values which the moving average leaves at both ends
+    bundle opts = _(multiplicative=TRUE, extrapolate_trend=3)
+    bundle Ret = clc_decompose(y, opts)
+
+elif EXAMPLE == 3
+    # STL decomposition with robust weights
+    bundle opts = _(outer=1, inner=2, robust=TRUE)
+    bundle Ret = stl_decompose(y, opts)
 endif
-L += y
-scatters L --output=display
+
+# Retrieve the components as series
+series trend = Ret.trend
+series season = Ret.season
+series remainder = Ret.remainder
+list L = y trend season remainder
+
+# Print the first and last 10 rows of the components
+print L --head=10
+print L --tail=10
+
+# Plot the components
+scalar err = plot_decompose(y, Ret)
+
+# Components side by side, with an overall title
+bundle plot_opts = _(layout="horizontal", title="Some decomposition")
+err = plot_decompose(y, Ret, plot_opts)
+
+# OPTIONAL: Three separate plots. To save them to file, pass "output", e.g.
+# "decomposition.png", which produces decomposition_trend.png,
+# decomposition_season.png and decomposition_remainder.png
+#plot_opts = _(layout="separate", output="decomposition.png", width=400, height=400)
+#err = plot_decompose(y, Ret, plot_opts)

@@ -1,3 +1,6 @@
+# Import the STL decomposition functions
+include stl.inp
+
 function bundle default_values (void)
     /* Set default values for clc_decompose()'s options bundle. */
 
@@ -8,18 +11,30 @@ function bundle default_values (void)
     return self
 end function
 
-function bundle set_bundle_and_get_defaults (bundle opts[null])
+function bundle set_bundle_and_get_defaults (const bundle defaults,
+                                             bundle opts[null])
     /* Compile self bundle by merging eventual information
-    from 'opts' bundle. */
+    from 'opts' bundle into the 'defaults' bundle. */
 
     if !exists(opts)
         bundle opts = defbundle()
     endif
 
-    bundle self = default_values()
+    bundle self = defaults
     self = opts + self          # override defaults
 
     return self
+end function
+
+function void check_seasonal_series (const scalar frequency,
+                                     const scalar nobs,
+                                     const scalar min_cycles[2])
+    /* Raise an error if the series is not seasonal or if it holds
+    fewer than 'min_cycles' full seasonal cycles. */
+
+    errorif(frequency == 1, "Time-series must have seasonal frequency.")
+    errorif(nobs < min_cycles * frequency, \
+            sprintf("Time-series must have at least %d valid observations.", min_cycles * frequency))
 end function
 
 function bundle clc_decompose (const series y,
@@ -42,7 +57,7 @@ function bundle clc_decompose (const series y,
     has no equivalent and always leaves the edge NAs in place, which
     is this function's default (extrapolate_trend=0) behavior too. */
 
-    bundle self = set_bundle_and_get_defaults(opts)
+    bundle self = set_bundle_and_get_defaults(default_values(), opts)
 
     scalar Torig = $nobs
     smpl y --contiguous
@@ -53,9 +68,7 @@ function bundle clc_decompose (const series y,
     scalar self.frequency = $pd
     scalar self.nobs = T
 
-    errorif(self.frequency == 1, "Time-series must have seasonal frequency.")
-    errorif(T < 2 * self.frequency, \
-            sprintf("Time-series must have at least %d valid observations.", 2 * self.frequency))
+    check_seasonal_series(self.frequency, T, 2)
 
     series trend = trend_component(y)
     trend = extrapolate_trend_component(trend, self.extrapolate_trend)
@@ -217,14 +230,40 @@ function series extrapolate_trend_component (series trend, const int n)
 end function
 
 
+function string plot_filename (const string path, const string suffix)
+    /* Insert '_<suffix>' before the file extension of 'path'. A name
+    without extension gets the suffix appended. */
+
+    scalar n = strlen(path)
+    scalar dot = 0
+    loop j = 1..n -q
+        scalar k = n - j + 1
+        string ch = substr(path, k, k)
+        if ch == "/"
+            break
+        elif ch == "."
+            dot = k
+            break
+        endif
+    endloop
+
+    # a leading dot (hidden file) is not an extension
+    if dot > 1 && substr(path, dot-1, dot-1) != "/"
+        return sprintf("%s_%s%s", substr(path, 1, dot-1), suffix, substr(path, dot, n))
+    endif
+    return sprintf("%s_%s", path, suffix)
+end function
+
+
 function bundle plot_default_values (void)
     /* Set default values for clc_plot()'s options bundle. */
 
     bundle self = defbundle()
     string self.output = ""         # empty: show plot on screen
     string self.title = ""          # empty: no overall title
-    scalar self.width = 800
-    scalar self.height = 900
+    string self.layout = "vertical" # vertical, horizontal or separate
+    scalar self.width = 0           # 0: set automatically depending on layout
+    scalar self.height = 0          # 0: set automatically depending on layout
     scalar self.linewidth = 1.0
     scalar self.monochrome = FALSE
     scalar self.grid = TRUE
@@ -245,8 +284,15 @@ function scalar plot_decompose (const series target,
 
     opts.output: path+filename of the output file; if not set or empty,
     the plot is shown on screen.
-    opts.width, opts.height: size of the grid plot in pixels.
-    opts.title: overall title of the plot (default: none).
+    opts.layout: "vertical" (default; grid plot with three rows),
+    "horizontal" (grid plot with three columns) or "separate" (three
+    individual plots). For separate plots written to file, the suffix
+    _trend, _season or _remainder is inserted before the file extension.
+    opts.width, opts.height: size in pixels of the grid plot or, for
+    separate plots, of each plot. Default (0): 800x900 (vertical),
+    1200x400 (horizontal) and 600x400 (separate).
+    opts.title: overall title of the plot (default: none; ignored for
+    separate plots as each plot has its own title).
     opts.linewidth: line width (default: 1.0).
     opts.monochrome: black lines only (default: FALSE).
     opts.grid: show grid lines (default: TRUE).
@@ -266,6 +312,18 @@ function scalar plot_decompose (const series target,
     endif
     bundle self = plot_default_values()
     self = opts + self          # override defaults
+
+    if self.layout != "vertical" && self.layout != "horizontal" && self.layout != "separate"
+        printf "Error: opts.layout must be 'vertical', 'horizontal' or 'separate'.\n"
+        return 1
+    endif
+    # default plot size depending on layout
+    if self.width == 0
+        self.width = (self.layout == "vertical") ? 800 : (self.layout == "horizontal") ? 1200 : 600
+    endif
+    if self.height == 0
+        self.height = (self.layout == "vertical") ? 900 : 400
+    endif
 
     series trend = Model.trend
     series season = Model.season
@@ -330,8 +388,28 @@ function scalar plot_decompose (const series target,
     string dest = (strlen(self.output) > 0) ? self.output : "display"
     string ttl = self.title
 
-    catch gridplot Plots --rows=3 --width=self.width --height=self.height \
-          --title="@ttl" --output="@dest"
+    if self.layout == "separate"
+        strings components = defarray("trend", "season", "remainder")
+        strings One = array(1)
+        loop i = 1..nelem(Plots)
+            One[1] = Plots[i]
+            string fname = dest == "display" ? "display" : plot_filename(dest, components[i])
+            catch gridplot One --width=self.width --height=self.height  --output="@fname"
+            scalar error = $error
+            if error
+                printf "Error: failed to create plot for %s component.\n", components[i]
+                printf "       Check that the output file path is valid and writable.\n"
+                printf "       If the output file is open in another program, close it and try again.\n"
+            endif
+            if error
+                return 1
+            endif
+        endloop
+    else
+        scalar n_rows = (self.layout == "vertical") ? 3 : 1
+        catch gridplot Plots --rows=n_rows --width=self.width --height=self.height \
+              --title="@ttl" --output="@dest"
+    endif
 
     return $error ? 1 : 0
 end function
