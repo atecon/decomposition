@@ -363,8 +363,28 @@ function scalar plot_decompose (const series target,
     string dest = (strlen(self.output) > 0) ? self.output : "display"
     string ttl = self.title
 
-    catch gridplot Plots --rows=3 --width=self.width --height=self.height \
+    if self.layout == "separate"
+        strings components = defarray("trend", "season", "remainder")
+        strings One = array(1)
+        loop i = 1..nelem(Plots)
+            One[1] = Plots[i]
+            string fname = dest == "display" ? "display" : plot_filename(dest, components[i])
+            catch gridplot One --width=self.width --height=self.height  --output="@fname"
+            scalar error = $error
+            if error
+                printf "Error: failed to create plot for %s component.\n", components[i]
+                printf "       Check that the output file path is valid and writable.\n"
+                printf "       If the output file is open in another program, close it and try again.\n"
+            endif
+            if error
+                return 1
+            endif
+        endloop
+    else
+        scalar n_rows = (self.layout == "vertical") ? 3 : 1
+        catch gridplot Plots --rows=n_rows --width=self.width --height=self.height \
           --title="@ttl" --output="@dest"
+    endif
 
     return $error ? 1 : 0
 end function
