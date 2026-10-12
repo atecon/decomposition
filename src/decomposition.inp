@@ -236,8 +236,9 @@ function bundle plot_default_values (void)
     bundle self = defbundle()
     string self.output = ""         # empty: show plot on screen
     string self.title = ""          # empty: no overall title
-    scalar self.width = 800
-    scalar self.height = 900
+    string self.layout = "vertical" # vertical, horizontal or separate
+    scalar self.width = 0           # 0: set automatically depending on layout
+    scalar self.height = 0          # 0: set automatically depending on layout
     scalar self.linewidth = 1.0
     scalar self.monochrome = FALSE
     scalar self.grid = TRUE
