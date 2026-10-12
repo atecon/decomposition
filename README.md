@@ -1,8 +1,9 @@
 # decomposition Package
 
-This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component using classical decomposition (additive or multiplicative), which is based on centered moving averages. For more information see:
+This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component. Two methods are available:
 
-https://otexts.com/fpp3/classical-decomposition.html
+1. Classical decomposition (additive or multiplicative), which is based on centered moving averages, via `clc_decompose()`. For more information see https://otexts.com/fpp3/classical-decomposition.html
+2. STL (Seasonal-Trend decomposition using Loess), a more flexible and robust method which allows the seasonal pattern to change over time, via `stl_decompose()`. For more information see https://otexts.com/fpp3/stl.html
 
 The series must have a seasonal (periodic) frequency, e.g. quarterly or monthly data. The seasonal period is taken from the dataset frequency.
 
@@ -47,6 +48,76 @@ For the additive model: `y = trend + season + remainder`. For the multiplicative
 
 
 
+## stl_decompose
+
+```
+stl_decompose (series y, bundle opts[null])
+```
+
+STL decomposition of a time series into trend-cycle, seasonal and remainder component using loess smoothing (locally weighted regression). The decomposition is additive: `y = trend + season + remainder`. All parameters are optional and are passed via the bundle `opts`.
+
+The reference is: Cleveland, R. B., Cleveland, W. S., McRae, J. E., & Terpenning, I. (1990). STL: A seasonal-trend decomposition procedure based on loess. *Journal of Official Statistics*, 6(1), 3-73.
+
+**How the method works**
+
+Compared to classical decomposition, STL does not assume a fixed seasonal pattern: the seasonal component can change slowly over time, and the trend-cycle is available for all observations (no missing values at the edges). Let `m` denote the seasonal period (e.g. 4 for quarterly and 12 for monthly data). The algorithm iterates the following steps (the "inner loop"), starting with a trend of zero:
+
+1. *Detrending:* subtract the current trend from the series.
+2. *Cycle-subseries smoothing:* split the detrended series into `m` cycle-subseries, e.g. all Januaries, all Februaries, and so on for monthly data. Each cycle-subseries is smoothed separately by loess with span `s_window`. This yields a preliminary seasonal component.
+3. *Low-pass filtering:* apply two moving averages of length `m`, one of length 3 and finally a loess smoother with span `l_window` to the preliminary seasonal component.
+4. *Detrending of the seasonal component:* subtract the low-pass filtered series from the preliminary seasonal component. This removes low-frequency variation (trend) that leaked into the seasonal component. The result is the seasonal component.
+5. *Seasonal adjustment:* subtract the seasonal component from the original series.
+6. *Trend smoothing:* smooth the seasonally adjusted series by loess with span `t_window`. This is the new trend.
+
+The inner loop is repeated `inner` times. If `robust` is `TRUE` (or `outer > 0`), an additional *outer loop* is run `outer` times: after each inner loop, the remainder is computed and robustness weights are derived from its size. Observations with large remainders, i.e. outliers, receive weights close to zero (bisquare function of the remainder divided by six times its median absolute value). The weights enter the loess smoothers in steps 2 and 6 of the next inner loop, which then starts from the current trend. Hence, outliers hardly affect the trend and the seasonal component and end up in the remainder.
+
+**Arguments:**
+
+- `y`: series, Series to decompose. The series must have a seasonal frequency and contain at least 16 full seasonal cycles. Missing values at the sample edges are ignored with a warning.
+- `opts`: bundle, Optional parameters. **You can pass the following parameters:**
+
+    * `s_window`: int, Span of the loess smoother in step 2 (default: `7`). See the explanations below.
+    * `t_window`: int, Span of the loess smoother for the trend in step 6. The default `0` sets the smallest odd integer greater than or equal to `1.5 * m / (1 - 1.5 / s_window)`.
+    * `l_window`: int, Span of the loess smoother of the low-pass filter in step 3. The default `0` sets the smallest odd integer greater than or equal to `m`.
+    * `inner`: int, Number of inner loop iterations. The default `0` sets `2`.
+    * `outer`: int, Number of outer loop (robustness) iterations. The default `0` sets `0` if `robust` is `FALSE` and `15` if `robust` is `TRUE`.
+    * `robust`: bool, If `TRUE`, robustness weights are used to reduce the influence of outliers (default: `FALSE`).
+
+**Choosing the parameters**
+
+All spans (`s_window`, `t_window`, `l_window`) should be odd integers and measure a number of observations. A larger span means a smoother estimate, a smaller span means a more flexible estimate that follows the data more closely.
+
+- `s_window` controls how quickly the seasonal pattern may change. In step 2 it counts observations *within a cycle-subseries*, i.e. years for monthly or quarterly data, not months or quarters. A small value (3 or 5) lets the seasonal pattern evolve quickly but may pick up noise. A large value gives a stable seasonal pattern which, in the limit, is the same in every year (as in classical decomposition). The value must be at least 3; the default of `7` is a common starting point. Try different values and inspect the seasonal component, e.g. by `plot_decompose()`: it should neither be erratic nor ignore a visible change in the seasonal amplitude.
+- `t_window` controls the smoothness of the trend-cycle. A larger value gives a smoother trend, a smaller value lets it follow short-term movements, which then no longer show up in the remainder. The default depends on `s_window` and `m` (for instance `9` for quarterly data and `s_window = 7`, `23` for monthly data and `s_window = 7`) and works well in most cases. Increase it if the trend is too wiggly.
+- `l_window` only affects the low-pass filter. The default is almost always appropriate.
+- `inner` and `outer`: Two inner iterations are usually sufficient. If the data contain outliers (e.g. due to strikes, one-off events or measurement errors), use `robust = TRUE`; this increases the computation time as the weighted loess has to be recomputed `outer` times. You may also set `outer` directly: a positive value runs the outer loop with that many iterations. Without outliers, the non-robust default is fine.
+
+**Return:** Bundle holding various items.
+
+- `trend`: series, Trend-cycle component.
+- `season`: series, Seasonal component.
+- `remainder`: series, Remainder component.
+- `y`: series, The decomposed series.
+- `frequency`: scalar, Seasonal period of the data.
+- `nobs`: scalar, Number of observations used.
+- `multiplicative`: bool, Always `FALSE`: the decomposition is additive.
+- `s_window`, `t_window`, `l_window`, `inner`, `outer`, `robust`: The parameters actually used, after replacing the automatic defaults.
+
+The returned bundle can be passed to `plot_decompose()`.
+
+**Multiplicative decomposition:** STL is additive. If the seasonal swings grow with the level of the series (see below), decompose the logarithm of the series (which requires strictly positive values) and transform the components back (as is also done with Python's `statsmodels.tsa.seasonal.STL`):
+
+```
+series ly = log(y)
+bundle Model = stl_decompose(ly, _(s_window=13))
+series trend = exp(Model.trend)
+series season = exp(Model.season)
+series remainder = exp(Model.remainder)    # y = trend * season * remainder
+```
+
+**Note:** The implementation follows Cleveland et al. (1990) with one simplification: the cycle-subseries are not extended by one value at each end before smoothing. Hence, results can differ slightly from other STL implementations at the edges of the sample. A comparison with Python's `statsmodels.tsa.seasonal.STL` for quarterly data gave very similar results.
+
+
 ## plot_decompose
 
 ```
@@ -62,9 +133,10 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 - `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
 
     * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
-    * `title`: string, Overall title of the plot (default: no title).
-    * `width`: scalar, Width of the plot in pixels (default: 800).
-    * `height`: scalar, Height of the plot in pixels (default: 900).
+    * `layout`: string, Arrangement of the plots (default: `vertical`). `vertical`: one grid plot with the three plots below each other. `horizontal`: one grid plot with the three plots side by side. `separate`: three individual plots (data and trend-cycle, seasonal component, remainder component). When saving separate plots to file, the suffix `_trend`, `_season` or `_remainder` is inserted before the file extension of `output`, e.g. `decomposition.png` is saved as `decomposition_trend.png`, `decomposition_season.png` and `decomposition_remainder.png`. Without `output` the plots are shown on the screen one after another.
+    * `title`: string, Overall title of the plot (default: no title). Ignored for `separate` plots, as each plot has its own title.
+    * `width`: scalar, Width of the plot in pixels. For `separate` plots, the width of each plot. Default: `800` (`vertical`), `1200` (`horizontal`) and `600` (`separate`).
+    * `height`: scalar, Height of the plot in pixels. For `separate` plots, the height of each plot. Default: `900` (`vertical`) and `400` (`horizontal` and `separate`).
     * `linewidth`: scalar, Line width (default: 1.0).
     * `monochrome`: bool, If `TRUE`, draw black lines only. The trend-cycle and the reference lines are then distinguished by their dash pattern (default: `FALSE`).
     * `grid`: bool, If `TRUE`, show grid lines (default: `TRUE`).
@@ -75,7 +147,7 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 
 # Interpretation of the components
 
-Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()`.
+Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()` or `stl_decompose()`. The components of `stl_decompose()` follow the additive interpretation.
 
 ## Additive model
 
@@ -122,4 +194,4 @@ Plot the series. If the seasonal swings widen as the level rises, use the multip
 # Changelog
 
 * **v0.1 (October 2026)**
-    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation) and the plot function `plot_decomposition()`
+    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()` and the plot function `plot_decompose()`
