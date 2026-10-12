@@ -230,6 +230,68 @@ function series extrapolate_trend_component (series trend, const int n)
 end function
 
 
+function scalar strength_measure (const bundle Model,
+                                  const string component)
+    /* Shared worker of strength_trend() and strength_season():
+    max(0, 1 - Var(remainder) / Var(component + remainder)) evaluated on
+    the observations where both series are valid (the classical
+    decomposition leaves NAs at the edges). For a multiplicative
+    decomposition the components are log-transformed first. */
+
+    strings required = defarray("trend", "season", "remainder", "multiplicative")
+    loop foreach i required
+        errorif(!inbundle(Model, required[i]), \
+                "'Model' is not a bundle returned by clc_decompose() or stl_decompose().")
+    endloop
+
+    series comp = Model[component]
+    series rem = Model.remainder
+    if Model.multiplicative
+        comp = log(comp)
+        rem = log(rem)
+    endif
+    series total = comp + rem
+
+    smpl ok(total) --restrict
+    errorif($nobs < 2, "At least two valid observations are required.")
+    scalar v_total = var(total)
+    errorif(v_total == 0, "The variance of the series is zero.")
+
+    return max(0, 1 - var(rem) / v_total)
+end function
+
+function scalar strength_trend (const bundle Model)
+    /* Strength of trend, see https://otexts.com/fpp3/features.html
+    (Wang, Smith & Hyndman, 2006):
+
+        F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+
+    Model: bundle returned by clc_decompose() or stl_decompose(). For a
+    multiplicative decomposition the formula is applied to the logs of
+    the components, i.e. to the additive decomposition of log(y).
+
+    Returns a scalar between 0 (no trend) and 1 (strong trend). */
+
+    return strength_measure(Model, "trend")
+end function
+
+function scalar strength_season (const bundle Model)
+    /* Strength of seasonality, see https://otexts.com/fpp3/features.html
+    (Wang, Smith & Hyndman, 2006):
+
+        F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+
+    Model: bundle returned by clc_decompose() or stl_decompose(). For a
+    multiplicative decomposition the formula is applied to the logs of
+    the components, i.e. to the additive decomposition of log(y).
+
+    Returns a scalar between 0 (no seasonality) and 1 (strong
+    seasonality). */
+
+    return strength_measure(Model, "season")
+end function
+
+
 function string plot_filename (const string path, const string suffix)
     /* Insert '_<suffix>' before the file extension of 'path'. A name
     without extension gets the suffix appended. */
