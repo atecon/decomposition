@@ -38,6 +38,11 @@ list L = y trend season remainder
 print L --head=10
 print L --tail=10
 
+# Strength of trend and seasonality
+scalar FT = strength_trend(Ret)
+scalar FS = strength_season(Ret)
+printf "Strength of trend: %.3f, strength of seasonality: %.3f\n", FT, FS
+
 # Plot the components
 scalar err = plot_decompose(y, Ret)
 
