@@ -259,8 +259,15 @@ function scalar plot_decompose (const series target,
 
     opts.output: path+filename of the output file; if not set or empty,
     the plot is shown on screen.
-    opts.width, opts.height: size of the grid plot in pixels.
-    opts.title: overall title of the plot (default: none).
+    opts.layout: "vertical" (default; grid plot with three rows),
+    "horizontal" (grid plot with three columns) or "separate" (three
+    individual plots). For separate plots written to file, the suffix
+    _trend, _season or _remainder is inserted before the file extension.
+    opts.width, opts.height: size in pixels of the grid plot or, for
+    separate plots, of each plot. Default (0): 800x900 (vertical),
+    1200x400 (horizontal) and 600x400 (separate).
+    opts.title: overall title of the plot (default: none; ignored for
+    separate plots as each plot has its own title).
     opts.linewidth: line width (default: 1.0).
     opts.monochrome: black lines only (default: FALSE).
     opts.grid: show grid lines (default: TRUE).
