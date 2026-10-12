@@ -19,7 +19,7 @@ function series stl_index_ma (const series x, const int p)
 end function
 
 function series stl_wloess (const series y, const series x,
-                           const scalar q, const series prior_w)
+                            const scalar q, const series prior_w)
     /* Weighted local-linear (d=1) loess: tricube kernel x external
     prior weight, closed-form weighted least squares (2 unknowns --
     intercept and slope) at each evaluation point. Needed because
@@ -27,7 +27,17 @@ function series stl_wloess (const series y, const series x,
     STL's outer-loop robustness weights (derived from the STL
     remainder) must be injected into Steps 2 and 6. Verified to match
     gretl's own loess() to floating-point precision when prior_w is
-    all 1. */
+    all 1. Unlike loess(), it has no minimum number of observations.
+
+    q is the span as a fraction of the number of points. As in the
+    original STL implementation, q may exceed 1 (span larger than the
+    number of points): the bandwidth is then widened by
+    (q*n - n)/2 points on each side, so that all points keep a
+    positive weight. */
+
+    # keep missing values as NaN placeholders so that all matrices have
+    # the same length as the sample (local to this function call)
+    set skip_missing off
 
     scalar T = $nobs
     matrix xv = {x}
@@ -39,7 +49,10 @@ function series stl_wloess (const series y, const series x,
     matrix yok = selifr(yv, okv)
     matrix wok = selifr(wv, okv)
     scalar n = rows(xok)
-    scalar n_local = ceil(q * n)
+    scalar n_local = ceil(min(q, 1) * n)
+    # bandwidth widening for q > 1, in units of x
+    scalar spacing = (n > 1) ? (max(xok) - min(xok)) / (n - 1) : 1
+    scalar h_extra = (q > 1) ? (q * n - n) / 2 * spacing : 0
 
     series result = NA
     loop t = 1..T -q
@@ -47,7 +60,7 @@ function series stl_wloess (const series y, const series x,
         if ok(xv[t])
             matrix d = abs(xok - xt)
             matrix ds = msortby(d ~ seq(1,n)', 1)
-            scalar dmax = ds[min(n_local, n), 1]
+            scalar dmax = ds[min(n_local, n), 1] + h_extra
             if dmax <= 0
                 dmax = 1
             endif
@@ -70,17 +83,25 @@ function series stl_wloess (const series y, const series x,
 end function
 
 function series stl_smooth (const series y, const series x,
-                           const scalar q, const series rweights,
-                           const bool use_rweights)
-    /* Dispatches to gretl's built-in loess() (fast path) unless
-    robustness weights are active, in which case the from-scratch
-    stl_wloess() is used since loess() cannot accept external
-    weights. */
+                            const scalar q, const series rweights,
+                            const bool use_rweights)
+    /* Local-linear loess smoothing with span q (fraction of the number
+    of valid points; may exceed 1).
 
-    if use_rweights
+    Uses gretl's built-in loess() (fast path) if no robustness weights
+    are active and if the number of valid points is large enough:
+    loess() fails for fewer than 16 points (and its span cannot exceed
+    1). Otherwise the from-scratch stl_wloess() is used, which also
+    handles robustness weights, since loess() cannot accept external
+    weights. Both give the same results up to floating-point
+    precision. */
+
+    scalar min_loess_obs = 16
+
+    if use_rweights || sum(ok(y)) < min_loess_obs
         return stl_wloess(y, x, q, rweights)
     else
-        catch series result = loess(y, x, 1, q)
+        catch series result = loess(y, x, 1, min(q, 1))
         if $error
             funcerr "loess() failed; try a larger smoothing window or a longer series"
         endif
@@ -89,13 +110,13 @@ function series stl_smooth (const series y, const series x,
 end function
 
 function series stl_cycle_subseries_smooth (const series detrended,
-                                           const int s_window,
-                                           const int n_p,
-                                           const series rweights,
-                                           const bool use_rweights)
+                                            const int s_window,
+                                            const int n_p,
+                                            const series rweights,
+                                            const bool use_rweights)
     /* STL Step 2: split the detrended series into n_p cycle-subseries
     and loess-smooth each one independently at its own observed
-    positions (no pre/post extension: gretl's loess() cannot evaluate
+    positions (no pre/post extension: the smoother cannot evaluate
     beyond the current sample's date range without extensive dataset
     manipulation, so this is a minor simplification relative to the
     original Cleveland et al. algorithm). */
@@ -106,7 +127,7 @@ function series stl_cycle_subseries_smooth (const series detrended,
     loop j = 1..n_p -q
         smpl season_id == j --restrict
         scalar n_j = $nobs
-        scalar q = min(1.0, s_window / n_j)
+        scalar q = s_window / n_j
         series xidx = obs
         series fit = stl_smooth(detrended, xidx, q, rweights, use_rweights)
         series result = fit
@@ -120,8 +141,8 @@ function series stl_lowpass (const series C, const int n_p, const int l_window)
     /* STL Step 3: low-pass filter of the temporary seasonal series --
     two n_p-length centered moving averages, then a length-3 centered
     moving average, then a final loess smoothing (which also re-fills
-    the NAs left at the edges by the moving averages, since loess()
-    evaluates at every non-missing x regardless of y). */
+    the NAs left at the edges by the moving averages, since the
+    smoother evaluates at every non-missing x regardless of y). */
 
     series ma1 = stl_index_ma(C, n_p)
     series ma2 = stl_index_ma(ma1, n_p)
@@ -129,11 +150,9 @@ function series stl_lowpass (const series C, const int n_p, const int l_window)
 
     series xidx = obs
     scalar n_ok = sum(ok(ma3))
-    scalar q = min(1.0, l_window / n_ok)
-    catch series result = loess(ma3, xidx, 1, q)
-    if $error
-        funcerr "loess() failed in stl_lowpass; try a larger l_window or a longer series"
-    endif
+    scalar q = l_window / n_ok
+    series no_weights = 1
+    series result = stl_smooth(ma3, xidx, q, no_weights, FALSE)
 
     return result
 end function
@@ -144,7 +163,7 @@ function series stl_trend_smooth (const series deseasonalized, const int t_windo
 
     series xidx = obs
     scalar n_ok = sum(ok(deseasonalized))
-    scalar q = min(1.0, t_window / n_ok)
+    scalar q = t_window / n_ok
     series result = stl_smooth(deseasonalized, xidx, q, rweights, use_rweights)
 
     return result
@@ -208,7 +227,7 @@ function bundle stl_default_values (void)
     /* Set default values for stl_decompose()'s options bundle. */
 
     bundle self = defbundle()
-    scalar self.s_window = 7
+    scalar self.s_window = 11
     scalar self.t_window = 0        # 0: set automatically
     scalar self.l_window = 0        # 0: set automatically
     scalar self.inner = 0           # 0: set automatically
@@ -231,7 +250,7 @@ function bundle stl_decompose (const series y,
     Python's statsmodels.tsa.seasonal.STL().
 
     opts.s_window: span of the loess smoother applied to each
-    cycle-subseries (seasonal window), default 7.
+    cycle-subseries (seasonal window), default 11 as in R's STL().
     opts.t_window: span of the trend smoother; 0 (default) sets the
     smallest odd integer >= 1.5 * m / (1 - 1.5 / s_window).
     opts.l_window: span of the low-pass filter; 0 (default) sets the
@@ -254,13 +273,13 @@ function bundle stl_decompose (const series y,
     scalar self.frequency = n_p
     scalar self.nobs = T
 
-    # STL's per-cycle-subseries loess smoothing (Step 2) needs each of the
-    # n_p cycle-subseries (T/n_p points each) to be reasonably long, unlike
-    # classical decomposition's overall 2-cycle minimum. gretl's loess()
-    # has an undocumented minimum-observations requirement; empirically
-    # (via gretlcli) at least ~16 points per cycle-subseries are needed
-    # for it to succeed reliably.
-    check_seasonal_series(n_p, T, 16)
+    # At least three full cycles are required: the low-pass filter (Step 3)
+    # applies moving averages of length n_p, n_p and 3, which leave only
+    # T - 2*n_p valid points to be smoothed. Note that the seasonal smoother
+    # (Step 2) works on cycle-subseries of only T/n_p points each, so many
+    # more cycles are needed for a reliable estimate of a changing seasonal
+    # pattern.
+    check_seasonal_series(n_p, T, 3)
     errorif(self.s_window < 3, "opts.s_window must be at least 3.")
 
     if self.l_window == 0
