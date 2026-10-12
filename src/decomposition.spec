@@ -5,6 +5,6 @@ date = 2026-10-11
 description = Seasonal decomposition of time-series
 tags = C22
 min-version = 2024c
-public = clc_decompose stl_decompose plot_decompose
+public = clc_decompose stl_decompose plot_decompose strength_trend strength_season
 help = decomposition_help.md
 sample-script = decomposition_sample.inp
