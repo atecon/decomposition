@@ -73,10 +73,10 @@ The inner loop is repeated `inner` times. If `robust` is `TRUE` (or `outer > 0`)
 
 **Arguments:**
 
-- `y`: series, Series to decompose. The series must have a seasonal frequency and contain at least 16 full seasonal cycles. Missing values at the sample edges are ignored with a warning.
+- `y`: series, Series to decompose. The series must have a seasonal frequency and contain at least three full seasonal cycles (`3 * m` observations). Many more cycles are needed to estimate a changing seasonal pattern reliably: the seasonal smoother works on cycle-subseries with only one value per cycle. Missing values at the sample edges are ignored with a warning.
 - `opts`: bundle, Optional parameters. **You can pass the following parameters:**
 
-    * `s_window`: int, Span of the loess smoother in step 2 (default: `7`). See the explanations below.
+    * `s_window`: int, Span of the loess smoother in step 2 (default: `11`, as in R's `STL()`). See the explanations below.
     * `t_window`: int, Span of the loess smoother for the trend in step 6. The default `0` sets the smallest odd integer greater than or equal to `1.5 * m / (1 - 1.5 / s_window)`.
     * `l_window`: int, Span of the loess smoother of the low-pass filter in step 3. The default `0` sets the smallest odd integer greater than or equal to `m`.
     * `inner`: int, Number of inner loop iterations. The default `0` sets `2`.
@@ -87,10 +87,21 @@ The inner loop is repeated `inner` times. If `robust` is `TRUE` (or `outer > 0`)
 
 All spans (`s_window`, `t_window`, `l_window`) should be odd integers and measure a number of observations. A larger span means a smoother estimate, a smaller span means a more flexible estimate that follows the data more closely.
 
-- `s_window` controls how quickly the seasonal pattern may change. In step 2 it counts observations *within a cycle-subseries*, i.e. years for monthly or quarterly data, not months or quarters. A small value (3 or 5) lets the seasonal pattern evolve quickly but may pick up noise. A large value gives a stable seasonal pattern which, in the limit, is the same in every year (as in classical decomposition). The value must be at least 3; the default of `7` is a common starting point. Try different values and inspect the seasonal component, e.g. by `plot_decompose()`: it should neither be erratic nor ignore a visible change in the seasonal amplitude.
-- `t_window` controls the smoothness of the trend-cycle. A larger value gives a smoother trend, a smaller value lets it follow short-term movements, which then no longer show up in the remainder. The default depends on `s_window` and `m` (for instance `9` for quarterly data and `s_window = 7`, `23` for monthly data and `s_window = 7`) and works well in most cases. Increase it if the trend is too wiggly.
+- `s_window` controls how quickly the seasonal pattern may change. In step 2 it counts observations *within a cycle-subseries*, i.e. years for monthly or quarterly data, not months or quarters. A small value (3 or 5) lets the seasonal pattern evolve quickly but may pick up noise. A large value gives a stable seasonal pattern which changes only slowly from year to year. The value must be at least 3; the default of `11` is the one used by R's `STL()`; Cleveland et al. (1990) use 35 for a stable monthly series, and 7 is a common choice if the seasonal pattern changes quickly. Try different values and inspect the seasonal component, e.g. by `plot_decompose()`: it should neither be erratic nor ignore a visible change in the seasonal amplitude.
+- `t_window` controls the smoothness of the trend-cycle. A larger value gives a smoother trend, a smaller value lets it follow short-term movements, which then no longer show up in the remainder. The default is the smallest odd integer greater than or equal to `1.5 * m / (1 - 1.5 / s_window)`, the rule suggested by Cleveland et al. (1990) which prevents trend and seasonal component from competing for the same variation (for instance `7` for quarterly and `21` for monthly data if `s_window = 11`). It works well in most cases. Increase it if the trend is too wiggly.
 - `l_window` only affects the low-pass filter. The default is almost always appropriate.
 - `inner` and `outer`: Two inner iterations are usually sufficient. If the data contain outliers (e.g. due to strikes, one-off events or measurement errors), use `robust = TRUE`; this increases the computation time as the weighted loess has to be recomputed `outer` times. You may also set `outer` directly: a positive value runs the outer loop with that many iterations. Without outliers, the non-robust default is fine.
+
+**Comparison with the defaults of R and Python**
+
+R's `STL()` (package `feasts`, used in the book "Forecasting: Principles and Practice") calls `stats::stl()`; Python's `statsmodels.tsa.seasonal.STL` is another reference.
+
+- `s_window`: 11 in R's `STL()` (it must be odd and at least 7 there), 7 in statsmodels, 11 here.
+- `t_window` and `l_window`: the same rule as in R. statsmodels uses the smallest odd integer *greater than* `m` for `l_window`, which differs only for odd `m`.
+- `inner`: R uses 2 for non-robust and 1 for robust STL, statsmodels 5 for non-robust and 2 for robust STL. Here, 2 is used in both cases. The non-robust value agrees with R. For robust STL, the value of 2 follows statsmodels: with `inner = 1` our results differed considerably more from statsmodels (mean absolute difference of the trend of about 75 instead of 0.6 for quarterly data with values up to about 59,000). If you need to replicate R's robust results exactly, set `inner = 1`.
+- `outer`: 0 for non-robust and 15 for robust STL, as in R and statsmodels.
+- Degrees of the local polynomials: the loess smoothers use local linear regression (degree one) throughout. R uses a locally constant fit (degree zero) for the seasonal smoother by default, hence the seasonal component can differ slightly from R's.
+- Speed-up by linear interpolation (`jump` in R) is not used: loess is evaluated at every observation.
 
 **Return:** Bundle holding various items.
 
@@ -115,7 +126,7 @@ series season = exp(Model.season)
 series remainder = exp(Model.remainder)    # y = trend * season * remainder
 ```
 
-**Note:** The implementation follows Cleveland et al. (1990) with one simplification: the cycle-subseries are not extended by one value at each end before smoothing. Hence, results can differ slightly from other STL implementations at the edges of the sample. A comparison with Python's `statsmodels.tsa.seasonal.STL` for quarterly data gave very similar results.
+**Note:** The implementation follows Cleveland et al. (1990) with one simplification: the cycle-subseries are not extended by one value at each end before smoothing. Hence, results can differ slightly from other STL implementations at the edges of the sample. A comparison with Python's `statsmodels.tsa.seasonal.STL` for quarterly data (using the same parameters) gave very similar results.
 
 
 ## plot_decompose
