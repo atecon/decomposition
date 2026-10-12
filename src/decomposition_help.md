@@ -157,6 +157,62 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 
 
 
+## strength_trend
+
+```
+strength_trend (bundle Model)
+```
+
+Compute the strength of the trend of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+```
+
+`trend + remainder` is the seasonally adjusted series. If the trend is strong, the variation of the seasonally adjusted series is dominated by the trend and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no trend) and `1` (strong trend).
+
+**Notes:** Observations where a component is missing (e.g. at the edges of the classical decomposition) are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components, i.e. to the additive decomposition of `log(y)`.
+
+```
+bundle Model = stl_decompose(y)
+scalar FT = strength_trend(Model)
+```
+
+
+## strength_season
+
+```
+strength_season (bundle Model)
+```
+
+Compute the strength of the seasonality of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+```
+
+`season + remainder` is the detrended series. If the seasonality is strong, the variation of the detrended series is dominated by the seasonal component and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no seasonality) and `1` (strong seasonality).
+
+**Notes:** Observations where a component is missing are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components.
+
+```
+bundle Model = clc_decompose(y)
+scalar FS = strength_season(Model)
+```
+
+
 # Interpretation of the components
 
 Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()` or `stl_decompose()`. The components of `stl_decompose()` follow the additive interpretation.
@@ -206,4 +262,4 @@ Plot the series. If the seasonal swings widen as the level rises, use the multip
 # Changelog
 
 * **v0.1 (October 2026)**
-    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()` and the plot function `plot_decompose()`
+    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()`, the plot function `plot_decompose()` and the strength measures `strength_trend()` and `strength_season()`
