@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gretl-functions>
-<gretl-function-package name="decomposition" minver="2023c">
+<gretl-function-package name="decomposition" minver="2024c">
 <author email="atecon@posteo.de">Artur Tarassow</author>
 <version>0.1</version>
 <date>2026-10-11</date>
