@@ -288,6 +288,18 @@ function scalar plot_decompose (const series target,
     bundle self = plot_default_values()
     self = opts + self          # override defaults
 
+    if self.layout != "vertical" && self.layout != "horizontal" && self.layout != "separate"
+        printf "Error: opts.layout must be 'vertical', 'horizontal' or 'separate'.\n"
+        return 1
+    endif
+    # default plot size depending on layout
+    if self.width == 0
+        self.width = (self.layout == "vertical") ? 800 : (self.layout == "horizontal") ? 1200 : 600
+    endif
+    if self.height == 0
+        self.height = (self.layout == "vertical") ? 900 : 400
+    endif
+
     series trend = Model.trend
     series season = Model.season
     series remainder = Model.remainder
