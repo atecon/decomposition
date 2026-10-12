@@ -41,13 +41,12 @@ print L --tail=10
 # Plot the components
 scalar err = plot_decompose(y, Ret)
 
-
 # Components side by side, with an overall title
 bundle plot_opts = _(layout="horizontal", title="Some decomposition")
 err = plot_decompose(y, Ret, plot_opts)
 
-# Three separate plots. To save them to file, pass "output", e.g.
+# OPTIONAL: Three separate plots. To save them to file, pass "output", e.g.
 # "decomposition.png", which produces decomposition_trend.png,
 # decomposition_season.png and decomposition_remainder.png
-plot_opts = _(layout="separate")
-err = plot_decompose(y, Ret, plot_opts)
+#plot_opts = _(layout="separate", output="decomposition.png", width=400, height=400)
+#err = plot_decompose(y, Ret, plot_opts)
