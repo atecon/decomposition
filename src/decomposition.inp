@@ -230,6 +230,31 @@ function series extrapolate_trend_component (series trend, const int n)
 end function
 
 
+function string plot_filename (const string path, const string suffix)
+    /* Insert '_<suffix>' before the file extension of 'path'. A name
+    without extension gets the suffix appended. */
+
+    scalar n = strlen(path)
+    scalar dot = 0
+    loop j = 1..n -q
+        scalar k = n - j + 1
+        string ch = substr(path, k, k)
+        if ch == "/"
+            break
+        elif ch == "."
+            dot = k
+            break
+        endif
+    endloop
+
+    # a leading dot (hidden file) is not an extension
+    if dot > 1 && substr(path, dot-1, dot-1) != "/"
+        return sprintf("%s_%s%s", substr(path, 1, dot-1), suffix, substr(path, dot, n))
+    endif
+    return sprintf("%s_%s", path, suffix)
+end function
+
+
 function bundle plot_default_values (void)
     /* Set default values for clc_plot()'s options bundle. */
 
@@ -383,7 +408,7 @@ function scalar plot_decompose (const series target,
     else
         scalar n_rows = (self.layout == "vertical") ? 3 : 1
         catch gridplot Plots --rows=n_rows --width=self.width --height=self.height \
-          --title="@ttl" --output="@dest"
+              --title="@ttl" --output="@dest"
     endif
 
     return $error ? 1 : 0
