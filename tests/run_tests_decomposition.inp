@@ -163,8 +163,8 @@ assert(inbundle(Model, "trend") && inbundle(Model, "season") && \
 assert(Model.frequency == 4)
 assert(Model.nobs == 80)
 assert(Model.multiplicative == 0)
-assert(Model.s_window == 7)
-assert(Model.t_window == 9)     # nextodd(1.5*4 / (1 - 1.5/7)) = nextodd(7.64)
+assert(Model.s_window == 11)
+assert(Model.t_window == 7)     # nextodd(1.5*4 / (1 - 1.5/11)) = nextodd(6.95)
 assert(Model.l_window == 5)
 assert(Model.inner == 2)
 assert(Model.outer == 0)
@@ -198,6 +198,48 @@ assert(maxc({abs(chk)}) < 1.0e-9)
 assert(ModelR.remainder[40] > 150)
 
 printf "PASS: robust stl_decompose() uses default iterations and isolates an outlier\n"
+
+
+# ---------------------------------------------------------------------
+# Test 9b: the from-scratch weighted loess (used for short samples and
+# robustness weights) matches gretl's built-in loess() for unit weights.
+# ---------------------------------------------------------------------
+nulldata 40
+series x = obs
+series yy = sin(x / 5) + 0.1 * normal()
+series w = 1
+series f_builtin = loess(yy, x, 1, 0.4)
+series f_own = stl_wloess(yy, x, 0.4, w)
+assert(maxc({abs(f_builtin - f_own)}) < 1.0e-8)
+
+printf "PASS: stl_wloess() matches loess() for unit weights\n"
+
+
+# ---------------------------------------------------------------------
+# Test 9c: stl_decompose() works for short series (loess() alone needs
+# at least 16 points per cycle-subseries): three full cycles suffice.
+# Results must be finite and reconstruct the series.
+# ---------------------------------------------------------------------
+nulldata 20
+setobs 4 2000:1
+series y_all = 10 + 0.5*seq(1,20)' + lincomb(seasonals(), {3, -1, 2, -4}) + 0.1*normal()
+matrix Ts = {12, 16, 20}
+loop i = 1..3 -q
+    scalar T = Ts[i]
+    smpl 1 T
+    series y = y_all
+    bundle Ms = stl_decompose(y)
+    assert(Ms.nobs == T)
+    assert(sum(ok(Ms.trend)) == T)
+    assert(sum(ok(Ms.season)) == T)
+    series chk = y - Ms.trend - Ms.season - Ms.remainder
+    assert(maxc({abs(chk)}) < 1.0e-9)
+    bundle Mr = stl_decompose(y, defbundle("robust", TRUE))
+    assert(sum(ok(Mr.trend)) == T)
+    smpl full
+endloop
+
+printf "PASS: stl_decompose() handles short series (three or more cycles)\n"
 
 
 # ---------------------------------------------------------------------
