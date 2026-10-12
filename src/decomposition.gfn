@@ -32,7 +32,8 @@ Classical decomposition of a time series into trend-cycle, seasonal and remainde
 
 The trend-cycle is estimated by a centered moving average (an m-MA if the seasonal period m is odd, a 2xm-MA if m is even). The seasonal component is the average of the detrended series for each season, centered such that the seasonal indices sum to zero (additive) or average to one (multiplicative). The remainder is what is left over. Missing values at the sample edges are ignored with a warning. The series must contain at least two full seasonal cycles.
 
-For the additive model: `y = trend + season + remainder`. For the multiplicative model: `y = trend * season * remainder`.
+For the additive model: `y = trend + season + remainder`.
+For the multiplicative model: `y = trend * season * remainder`.
 
 **Arguments:**
 
