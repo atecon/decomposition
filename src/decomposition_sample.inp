@@ -8,8 +8,8 @@ series y = g
 
 
 EXAMPLE = 1  # 1: Additive classical decomposition
-            # 2: Multiplicative classical decomp. with trend extrapolation
-            # 3: STL decomposition with robust weights
+             # 2: Multiplicative classical decomp. with trend extrapolation
+             # 3: STL decomposition with robust weights
 
 
 if EXAMPLE == 1
@@ -35,8 +35,8 @@ series remainder = Ret.remainder
 list L = y trend season remainder
 
 # Print the first and last 10 rows of the components
-print L --head=10
-print L --tail=10
+print L --byobs --range=1:10
+print L --byobs --range=-10:
 
 # Strength of trend and seasonality
 scalar FT = strength_trend(Ret)
