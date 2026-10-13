@@ -1,4 +1,4 @@
-# decomposition Package
+# "decomposition" Package
 
 This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component. Two methods are available:
 
@@ -7,16 +7,21 @@ This gretl package decomposes a seasonal time series into a trend-cycle, a seaso
 
 The series must have a seasonal (periodic) frequency, e.g. quarterly or monthly data. The seasonal period is taken from the dataset frequency.
 
+*Alternative gretl packages* for trend and/or seasonal decompositions are:
+1. `StrucTiSM`: Harvey-style Structural Time Series Models, https://gretl.sourceforge.net/current_fnfiles/unzipped/StrucTiSM.pdf
+2. `Holt`: Holt' double exponential smoothing with level and trend components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Holt.pdf
+3. `Winters`: Holt-Winters triple exponential smoothing with level, trend and seasonal components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Winters.pdf
+
 Please ask questions and report bugs on the Gretl mailing list if possible. Alternatively, create an issue ticket on the github repo (see below).
 Source code and test script(s) can be found here: https://github.com/atecon/decomposition
 
 
 # Public Functions
 
-## clc_decompose
+## Classical decomposition
 
 ```
-clc_decompose (series y, bundle opts[null])
+clc_decompose(series y, bundle opts[null])
 ```
 
 Classical decomposition of a time series into trend-cycle, seasonal and remainder component.
@@ -49,10 +54,10 @@ For the multiplicative model: `y = trend x season x remainder`.
 
 
 
-## stl_decompose
+## STL decomposition
 
 ```
-stl_decompose (series y, bundle opts[null])
+stl_decompose(series y, bundle opts[null])
 ```
 
 STL decomposition of a time series into trend-cycle, seasonal and remainder component using loess smoothing (locally weighted regression). The decomposition is additive: `y = trend + season + remainder`. All parameters are optional and are passed via the bundle `opts`.
@@ -130,7 +135,7 @@ series remainder = exp(Model.remainder)    # y = trend * season * remainder
 **Note:** The implementation follows Cleveland et al. (1990) with one simplification: the cycle-subseries are not extended by one value at each end before smoothing. Hence, results can differ slightly from other STL implementations at the edges of the sample. A comparison with Python's `statsmodels.tsa.seasonal.STL` for quarterly data (using the same parameters) gave very similar results.
 
 
-## plot_decompose
+## Plotting the decomposition
 
 ```
 plot_decompose (series target, bundle Model, bundle opts[null])
@@ -157,7 +162,8 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 
 
 
-## strength_trend
+
+## Strength of the trend
 
 ```
 strength_trend (bundle Model)
@@ -185,7 +191,7 @@ scalar FT = strength_trend(Model)
 ```
 
 
-## strength_season
+## Strength of the seasonality
 
 ```
 strength_season (bundle Model)
