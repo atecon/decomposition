@@ -4,7 +4,7 @@
 # Run from the repo root: gretlcli -b tests/export_for_compare.inp
 set verbose off
 open "/home/admin-tarassow/git/forecasting_principles/data/gdt/aus_production.gdt" --preserve
-include src/decomposition.inp --force
+include src/tsdecomp.inp --force
 include src/stl.inp --force
 series y = Electricity
 bundle o1 = defbundle("multiplicative", 0)
