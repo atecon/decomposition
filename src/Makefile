@@ -1,6 +1,6 @@
-PKG = decomposition
+PKG = tsdecomp
 
-$(PKG).gfn: $(PKG).inp $(PKG).spec $(PKG)_package_sample.inp $(PKG)_help.md ../README.md
+$(PKG).gfn: $(PKG).inp $(PKG).spec $(PKG)_sample.inp $(PKG)_help.md
 	gretlcli --makepkg $(PKG).inp
 
 
