@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reference decompositions via statsmodels, for comparison with
-src/decomposition_sample.inp (gretl).
+src/tsdecomp_sample.inp (gretl).
 
 Series: Electricity from aus_production.csv (quarterly, period 4).
   1. Classical additive decomposition (seasonal_decompose)
