@@ -2,13 +2,13 @@
 set -e
 
 DIR=$(dirname $(realpath "$0")) 	# locate folder where this sh-script is located in
-SCRIPT_DECOMPOSITION="./tests/run_tests_decomposition.inp"
-PACKAGE_NAME="decomposition"
+SCRIPT_TSDECOMP="./tests/run_tests_tsdecomp.inp"
+PACKAGE_NAME="tsdecomp"
 
 cd $DIR
 echo "Switched to ${DIR}"
 
-gretlcli -b -e -q ${SCRIPT_DECOMPOSITION}
+gretlcli -b -e -q ${SCRIPT_TSDECOMP}
 
 if [ $? -eq 0 ]
 then

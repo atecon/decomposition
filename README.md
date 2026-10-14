@@ -1,4 +1,4 @@
-# "decomposition" Package
+# "tsdecomp" Package
 
 This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component. Two methods are available:
 
@@ -13,7 +13,7 @@ The series must have a seasonal (periodic) frequency, e.g. quarterly or monthly 
 3. `Winters`: Holt-Winters triple exponential smoothing with level, trend and seasonal components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Winters.pdf
 
 Please ask questions and report bugs on the Gretl mailing list if possible. Alternatively, create an issue ticket on the github repo (see below).
-Source code and test script(s) can be found here: https://github.com/atecon/decomposition
+Source code and test script(s) can be found here: https://github.com/atecon/tsdecomp
 
 
 # Public Functions
@@ -150,7 +150,7 @@ Plot the components of a decomposition as a grid plot with three rows: (1) the a
 - `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
 
     * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
-    * `layout`: string, Arrangement of the plots (default: `vertical`). `vertical`: one grid plot with the three plots below each other. `horizontal`: one grid plot with the three plots side by side. `separate`: three individual plots (data and trend-cycle, seasonal component, remainder component). When saving separate plots to file, the suffix `_trend`, `_season` or `_remainder` is inserted before the file extension of `output`, e.g. `decomposition.png` is saved as `decomposition_trend.png`, `decomposition_season.png` and `decomposition_remainder.png`. Without `output` the plots are shown on the screen one after another.
+    * `layout`: string, Arrangement of the plots (default: `vertical`). `vertical`: one grid plot with the three plots below each other. `horizontal`: one grid plot with the three plots side by side. `separate`: three individual plots (data and trend-cycle, seasonal component, remainder component). When saving separate plots to file, the suffix `_trend`, `_season` or `_remainder` is inserted before the file extension of `output`, e.g. `tsdecomp.png` is saved as `tsdecomp_trend.png`, `tsdecomp_season.png` and `tsdecomp_remainder.png`. Without `output` the plots are shown on the screen one after another.
     * `title`: string, Overall title of the plot (default: no title). Ignored for `separate` plots, as each plot has its own title.
     * `width`: scalar, Width of the plot in pixels. For `separate` plots, the width of each plot. Default: `800` (`vertical`), `1200` (`horizontal`) and `600` (`separate`).
     * `height`: scalar, Height of the plot in pixels. For `separate` plots, the height of each plot. Default: `900` (`vertical`) and `400` (`horizontal` and `separate`).

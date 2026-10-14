@@ -1,7 +1,7 @@
 set assert stop
 set verbose off
 
-include ../src/decomposition.inp --force
+include ../src/tsdecomp.inp --force
 include ../src/stl.inp --force
 
 # ---------------------------------------------------------------------
@@ -385,4 +385,4 @@ assert(abs(strength_season(Mm) - strength_season(Ma)) < 0.02)
 printf "PASS: strength_*() use logs for multiplicative decompositions\n"
 
 
-printf "\nAll decomposition.inp tests passed.\n"
+printf "\nAll tsdecomp.inp tests passed.\n"
