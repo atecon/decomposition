@@ -1,6 +1,6 @@
 clear
 set verbose off
-include decomposition.gfn
+include tsdecomp.gfn
 
 # Monthly airline passengers (Box-Jenkins series G)
 open bjg.gdt --quiet
@@ -51,7 +51,7 @@ bundle plot_opts = _(layout="horizontal", title="Some decomposition")
 err = plot_decompose(y, Ret, plot_opts)
 
 # OPTIONAL: Three separate plots. To save them to file, pass "output", e.g.
-# "decomposition.png", which produces decomposition_trend.png,
-# decomposition_season.png and decomposition_remainder.png
-#plot_opts = _(layout="separate", output="decomposition.png", width=400, height=400)
+# "tsdecomp.png", which produces tsdecomp_trend.png,
+# tsdecomp_season.png and tsdecomp_remainder.png
+#plot_opts = _(layout="separate", output="tsdecomp.png", width=400, height=400)
 #err = plot_decompose(y, Ret, plot_opts)
