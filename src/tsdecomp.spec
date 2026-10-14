@@ -1,11 +1,11 @@
 author = Artur Tarassow
 email = atecon@posteo.de
 version = 0.1
-date = 2026-10-13
+date = 2026-10-14
 description = Seasonal decomposition of time-series
 tags = C22
 min-version = 2024c
 public = clc_decompose stl_decompose plot_decompose strength_trend strength_season
-help = decomposition_help.md
-sample-script = decomposition_sample.inp
+help = tsdecomp_help.md
+sample-script = tsdecomp_sample.inp
 data-requirement = needs-time-series-data
