@@ -1,0 +1,1211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gretl-functions>
+<gretl-function-package name="tsdecomp" needs-time-series-data="true" minver="2024c">
+<author email="atecon@posteo.de">Artur Tarassow</author>
+<version>0.1</version>
+<date>2026-10-14</date>
+<description>Seasonal decomposition of time-series</description>
+<tags>C22</tags>
+<help filename="tsdecomp_help.md">
+# &quot;tsdecomp&quot; Package
+
+This gretl package decomposes a seasonal time series into a trend-cycle, a seasonal and a remainder component. Two methods are available:
+
+1. Classical decomposition (additive or multiplicative), which is based on centered moving averages, via `clc_decompose()`. For more information see https://otexts.com/fpp3/classical-decomposition.html
+2. STL (Seasonal-Trend decomposition using Loess), a more flexible and robust method which allows the seasonal pattern to change over time, via `stl_decompose()`. For more information see https://otexts.com/fpp3/stl.html
+
+The series must have a seasonal (periodic) frequency, e.g. quarterly or monthly data. The seasonal period is taken from the dataset frequency.
+
+*Alternative gretl packages* for trend and/or seasonal decompositions are:
+1. `StrucTiSM`: Harvey-style Structural Time Series Models, https://gretl.sourceforge.net/current_fnfiles/unzipped/StrucTiSM.pdf
+2. `Holt`: Holt' double exponential smoothing with level and trend components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Holt.pdf
+3. `Winters`: Holt-Winters triple exponential smoothing with level, trend and seasonal components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Winters.pdf
+
+Please ask questions and report bugs on the Gretl mailing list if possible. Alternatively, create an issue ticket on the github repo (see below).
+Source code and test script(s) can be found here: https://github.com/atecon/tsdecomp
+
+
+# Public Functions
+
+## Classical decomposition
+
+```
+clc_decompose(series y, bundle opts[null])
+```
+
+Classical decomposition of a time series into trend-cycle, seasonal and remainder component.
+
+The trend-cycle is estimated by a centered moving average (an m-MA if the seasonal period m is odd, a 2xm-MA if m is even). The seasonal component is the average of the detrended series for each season, centered such that the seasonal indices sum to zero (additive) or average to one (multiplicative). The remainder is what is left over. Missing values at the sample edges are ignored with a warning. The series must contain at least two full seasonal cycles.
+
+For the additive model: `y = trend + season + remainder`.
+For the multiplicative model: `y = trend x season x remainder`.
+
+**Arguments:**
+
+- `y`: series, Series to decompose.
+- `opts`: bundle, Optional parameters. **You can pass the following parameters:**
+
+    * `multiplicative`: bool, If `TRUE` use the multiplicative model, otherwise the additive model (default: `FALSE`).
+    * `extrapolate_trend`: int, If greater than zero, the trend-cycle is linearly extrapolated into the missing values which the moving average leaves at both ends of the series. A line is fitted by OLS to the nearest `extrapolate_trend + 1` valid trend points at each end. As the seasonal and remainder components are computed from the trend, they are then also available at the edges. A larger value gives a smoother, less noise-sensitive extrapolation. The default `0` leaves the missing values in place (default: `0`).
+
+**Return:** Bundle holding various items.
+
+- `trend`: series, Trend-cycle component.
+- `season`: series, Seasonal component.
+- `remainder`: series, Remainder component.
+- `y`: series, The decomposed series.
+- `frequency`: scalar, Seasonal period of the data.
+- `nobs`: scalar, Number of observations used.
+- `multiplicative`: bool, Model type used.
+- `extrapolate_trend`: int, Number of extra points used for extrapolating the trend.
+
+**Note:** Without trend extrapolation the first and last `m/2` observations of `trend` and `remainder` are missing (`m` is the seasonal period).
+
+
+
+## STL decomposition
+
+```
+stl_decompose(series y, bundle opts[null])
+```
+
+STL decomposition of a time series into trend-cycle, seasonal and remainder component using loess smoothing (locally weighted regression). The decomposition is additive: `y = trend + season + remainder`. All parameters are optional and are passed via the bundle `opts`.
+
+The reference is: Cleveland, R. B., Cleveland, W. S., McRae, J. E., &amp; Terpenning, I. (1990). STL: A seasonal-trend decomposition procedure based on loess. *Journal of Official Statistics*, 6(1), 3-73.
+
+**How the method works**
+
+Compared to classical decomposition, STL does not assume a fixed seasonal pattern: the seasonal component can change slowly over time, and the trend-cycle is available for all observations (no missing values at the edges). Let `m` denote the seasonal period (e.g. 4 for quarterly and 12 for monthly data). The algorithm iterates the following steps (the &quot;inner loop&quot;), starting with a trend of zero:
+
+1. *Detrending:* subtract the current trend from the series.
+2. *Cycle-subseries smoothing:* split the detrended series into `m` cycle-subseries, e.g. all Januaries, all Februaries, and so on for monthly data. Each cycle-subseries is smoothed separately by loess with span `s_window`. This yields a preliminary seasonal component.
+3. *Low-pass filtering:* apply two moving averages of length `m`, one of length 3 and finally a loess smoother with span `l_window` to the preliminary seasonal component.
+4. *Detrending of the seasonal component:* subtract the low-pass filtered series from the preliminary seasonal component. This removes low-frequency variation (trend) that leaked into the seasonal component. The result is the seasonal component.
+5. *Seasonal adjustment:* subtract the seasonal component from the original series.
+6. *Trend smoothing:* smooth the seasonally adjusted series by loess with span `t_window`. This is the new trend.
+
+The inner loop is repeated `inner` times. If `robust` is `TRUE` (or `outer &gt; 0`), an additional *outer loop* is run `outer` times: after each inner loop, the remainder is computed and robustness weights are derived from its size. Observations with large remainders, i.e. outliers, receive weights close to zero (bisquare function of the remainder divided by six times its median absolute value). The weights enter the loess smoothers in steps 2 and 6 of the next inner loop, which then starts from the current trend. Hence, outliers hardly affect the trend and the seasonal component and end up in the remainder.
+
+**Arguments:**
+
+- `y`: series, Series to decompose. The series must have a seasonal frequency and contain at least three full seasonal cycles (`3 * m` observations). Many more cycles are needed to estimate a changing seasonal pattern reliably: the seasonal smoother works on cycle-subseries with only one value per cycle. Missing values at the sample edges are ignored with a warning.
+- `opts`: bundle, Optional parameters. **You can pass the following parameters:**
+
+    * `s_window`: int, Span of the loess smoother in step 2 (default: `11`, as in R's `STL()`). See the explanations below.
+    * `t_window`: int, Span of the loess smoother for the trend in step 6. The default `0` sets the smallest odd integer greater than or equal to `1.5 * m / (1 - 1.5 / s_window)`.
+    * `l_window`: int, Span of the loess smoother of the low-pass filter in step 3. The default `0` sets the smallest odd integer greater than or equal to `m`.
+    * `inner`: int, Number of inner loop iterations. The default `0` sets `2`.
+    * `outer`: int, Number of outer loop (robustness) iterations. The default `0` sets `0` if `robust` is `FALSE` and `15` if `robust` is `TRUE`.
+    * `robust`: bool, If `TRUE`, robustness weights are used to reduce the influence of outliers (default: `FALSE`).
+
+**Choosing the parameters**
+
+All spans (`s_window`, `t_window`, `l_window`) should be odd integers and measure a number of observations. A larger span means a smoother estimate, a smaller span means a more flexible estimate that follows the data more closely.
+
+- `s_window` controls how quickly the seasonal pattern may change. In step 2 it counts observations *within a cycle-subseries*, i.e. years for monthly or quarterly data, not months or quarters. A small value (3 or 5) lets the seasonal pattern evolve quickly but may pick up noise. A large value gives a stable seasonal pattern which changes only slowly from year to year. The value must be at least 3; the default of `11` is the one used by R's `STL()`; Cleveland et al. (1990) use 35 for a stable monthly series, and 7 is a common choice if the seasonal pattern changes quickly. Try different values and inspect the seasonal component, e.g. by `plot_decompose()`: it should neither be erratic nor ignore a visible change in the seasonal amplitude.
+- `t_window` controls the smoothness of the trend-cycle. A larger value gives a smoother trend, a smaller value lets it follow short-term movements, which then no longer show up in the remainder. The default is the smallest odd integer greater than or equal to `1.5 * m / (1 - 1.5 / s_window)`, the rule suggested by Cleveland et al. (1990) which prevents trend and seasonal component from competing for the same variation (for instance `7` for quarterly and `21` for monthly data if `s_window = 11`). It works well in most cases. Increase it if the trend is too wiggly.
+- `l_window` only affects the low-pass filter. The default is almost always appropriate.
+- `inner` and `outer`: Two inner iterations are usually sufficient. If the data contain outliers (e.g. due to strikes, one-off events or measurement errors), use `robust = TRUE`; this increases the computation time as the weighted loess has to be recomputed `outer` times. You may also set `outer` directly: a positive value runs the outer loop with that many iterations. Without outliers, the non-robust default is fine.
+
+**Comparison with the defaults of R and Python**
+
+R's `STL()` (package `feasts`, used in the book &quot;Forecasting: Principles and Practice&quot;) calls `stats::stl()`; Python's `statsmodels.tsa.seasonal.STL` is another reference.
+
+- `s_window`: 11 in R's `STL()` (it must be odd and at least 7 there), 7 in statsmodels, 11 here.
+- `t_window` and `l_window`: the same rule as in R. statsmodels uses the smallest odd integer *greater than* `m` for `l_window`, which differs only for odd `m`.
+- `inner`: R uses 2 for non-robust and 1 for robust STL, statsmodels 5 for non-robust and 2 for robust STL. Here, 2 is used in both cases. The non-robust value agrees with R. For robust STL, the value of 2 follows statsmodels: with `inner = 1` our results differed considerably more from statsmodels (mean absolute difference of the trend of about 75 instead of 0.6 for quarterly data with values up to about 59,000). If you need to replicate R's robust results exactly, set `inner = 1`.
+- `outer`: 0 for non-robust and 15 for robust STL, as in R and statsmodels.
+- Degrees of the local polynomials: the loess smoothers use local linear regression (degree one) throughout. R uses a locally constant fit (degree zero) for the seasonal smoother by default, hence the seasonal component can differ slightly from R's.
+- Speed-up by linear interpolation (`jump` in R) is not used: loess is evaluated at every observation.
+
+**Return:** Bundle holding various items.
+
+- `trend`: series, Trend-cycle component.
+- `season`: series, Seasonal component.
+- `remainder`: series, Remainder component.
+- `y`: series, The decomposed series.
+- `frequency`: scalar, Seasonal period of the data.
+- `nobs`: scalar, Number of observations used.
+- `multiplicative`: bool, Always `FALSE`: the decomposition is additive.
+- `s_window`, `t_window`, `l_window`, `inner`, `outer`, `robust`: The parameters actually used, after replacing the automatic defaults.
+
+The returned bundle can be passed to `plot_decompose()`.
+
+**Multiplicative decomposition:** STL is additive. If the seasonal swings grow with the level of the series (see below), decompose the logarithm of the series (which requires strictly positive values) and transform the components back (as is also done with Python's `statsmodels.tsa.seasonal.STL`):
+
+```
+series ly = log(y)
+bundle Model = stl_decompose(ly, _(s_window=13))
+series trend = exp(Model.trend)
+series season = exp(Model.season)
+series remainder = exp(Model.remainder)    # y = trend * season * remainder
+```
+
+**Note:** The implementation follows Cleveland et al. (1990) with one simplification: the cycle-subseries are not extended by one value at each end before smoothing. Hence, results can differ slightly from other STL implementations at the edges of the sample. A comparison with Python's `statsmodels.tsa.seasonal.STL` for quarterly data (using the same parameters) gave very similar results.
+
+
+## Plotting the decomposition
+
+```
+plot_decompose (series target, bundle Model, bundle opts[null])
+```
+
+Plot the components of a decomposition as a grid plot with three rows: (1) the actual series together with the trend-cycle, (2) the seasonal component and (3) the remainder component. Each subplot has its own title. The seasonal and the remainder subplots include a horizontal reference line at zero (additive model) or at one (multiplicative model).
+
+**Arguments:**
+
+- `target`: series, The series that was decomposed.
+- `Model`: bundle, Model object returned by the `*_decompose()` function.
+- `opts`: bundle, Optional parameters for controlling the plot. **You can pass the following parameters:**
+
+    * `output`: string, Path and name of the file to save the plot. The file type is determined by the file extension (e.g. `.png` or `.pdf`). If not provided, the plot is shown on the screen (default: show on screen).
+    * `layout`: string, Arrangement of the plots (default: `vertical`). `vertical`: one grid plot with the three plots below each other. `horizontal`: one grid plot with the three plots side by side. `separate`: three individual plots (data and trend-cycle, seasonal component, remainder component). When saving separate plots to file, the suffix `_trend`, `_season` or `_remainder` is inserted before the file extension of `output`, e.g. `tsdecomp.png` is saved as `tsdecomp_trend.png`, `tsdecomp_season.png` and `tsdecomp_remainder.png`. Without `output` the plots are shown on the screen one after another.
+    * `title`: string, Overall title of the plot (default: no title). Ignored for `separate` plots, as each plot has its own title.
+    * `width`: scalar, Width of the plot in pixels. For `separate` plots, the width of each plot. Default: `800` (`vertical`), `1200` (`horizontal`) and `600` (`separate`).
+    * `height`: scalar, Height of the plot in pixels. For `separate` plots, the height of each plot. Default: `900` (`vertical`) and `400` (`horizontal` and `separate`).
+    * `linewidth`: scalar, Line width (default: 1.0).
+    * `monochrome`: bool, If `TRUE`, draw black lines only. The trend-cycle and the reference lines are then distinguished by their dash pattern (default: `FALSE`).
+    * `grid`: bool, If `TRUE`, show grid lines (default: `TRUE`).
+
+**Return:** Scalar, `0` if no error occurred, otherwise `1`.
+
+
+
+
+## Strength of the trend
+
+```
+strength_trend (bundle Model)
+```
+
+Compute the strength of the trend of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+```
+
+`trend + remainder` is the seasonally adjusted series. If the trend is strong, the variation of the seasonally adjusted series is dominated by the trend and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no trend) and `1` (strong trend).
+
+**Notes:** Observations where a component is missing (e.g. at the edges of the classical decomposition) are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components, i.e. to the additive decomposition of `log(y)`.
+
+```
+bundle Model = stl_decompose(y)
+scalar FT = strength_trend(Model)
+```
+
+
+## Strength of the seasonality
+
+```
+strength_season (bundle Model)
+```
+
+Compute the strength of the seasonality of a decomposition as proposed by Wang, Smith and Hyndman (2006), see https://otexts.com/fpp3/features.html
+
+```
+F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+```
+
+`season + remainder` is the detrended series. If the seasonality is strong, the variation of the detrended series is dominated by the seasonal component and the ratio is close to zero.
+
+**Arguments:**
+
+- `Model`: bundle, Model object returned by `clc_decompose()` or `stl_decompose()`.
+
+**Return:** Scalar between `0` (no seasonality) and `1` (strong seasonality).
+
+**Notes:** Observations where a component is missing are ignored. For a multiplicative decomposition the formula is applied to the logarithms of the components.
+
+```
+bundle Model = clc_decompose(y)
+scalar FS = strength_season(Model)
+```
+
+
+# Interpretation of the components
+
+Let `y` be the series, e.g. units sold per month, and let `trend`, `season` and `remainder` be the components returned by `clc_decompose()` or `stl_decompose()`. The components of `stl_decompose()` follow the additive interpretation.
+
+## Additive model
+
+```
+y = trend + season + remainder
+```
+
+- `trend`: the underlying level, in the units of `y` (e.g. units sold per month).
+- `season`: the seasonal effect in units of `y`, centered such that the indices sum to zero over one cycle. A value of `+64` for July means that July sales are on average 64 units above the underlying level. The effect is the same number of units in every year, irrespective of the level of the series.
+- `remainder`: the deviation from `trend + season` in units of `y`.
+- Seasonally adjusted series: `y - season`.
+
+The additive model is appropriate if the size of the seasonal swings stays roughly constant as the level of the series changes.
+
+## Multiplicative model
+
+```
+y = trend * season * remainder
+```
+
+- `trend`: the underlying level, in the units of `y`. It is of a similar magnitude as in the additive model.
+- `season`: a dimensionless seasonal index, centered such that the indices average to one over one cycle. A value of `1.23` for July means that July sales are on average 23% above the underlying level, whatever that level is. A value below one means that the season is weaker than average.
+- `remainder`: a dimensionless factor, fluctuating around one. A value of `0.95` means that the observation is 5% below the value expected from trend and season, a value of `1.03` means 3% above.
+- Seasonally adjusted series: `y / season`. This series is in the units of `y`.
+
+The multiplicative model is appropriate if the seasonal swings grow (or shrink) in proportion to the level of the series, i.e. if the seasonal effect is a constant percentage rather than a constant number of units. In this case, the remainder of an additive model typically becomes larger when the level of the series rises, whereas the multiplicative remainder stays at a similar relative size.
+
+## Converting the multiplicative components to units
+
+The dimensionless components can be expressed in the units of `y`:
+
+```
+seasonal effect in units = trend * (season - 1)
+remainder in units       = y - trend * season
+```
+
+In contrast to the additive model, the seasonal effect in units varies over time with the level of the trend. For instance, a seasonal index of `1.23` corresponds to `+29` units at a trend of `127` units and to `+110` units at a trend of `475` units.
+
+## Choosing between the two models
+
+Plot the series. If the seasonal swings widen as the level rises, use the multiplicative model (`multiplicative = TRUE`), otherwise use the additive model. Both are linked via logarithms: the multiplicative model for `y` is the additive model for `log(y)`, as `log(y) = log(trend) + log(season) + log(remainder)`. The multiplicative model requires strictly positive values of `y`.
+
+
+# Changelog
+
+* **v0.1 (October 2026)**
+    * initial release: classical decomposition via `clc_decompose()` (including optional trend extrapolation), STL decomposition via `stl_decompose()`, the plot function `plot_decompose()` and the strength measures `strength_trend()` and `strength_season()`
+</help>
+<gretl-function name="clc_decompose" type="bundle">
+ <params count="2">
+  <param name="y" type="series" const="true"/>
+  <param name="opts" type="bundle" optional="true"/>
+ </params>
+<code>/* Classical decomposition of a time-series.
+https://otexts.com/fpp2/classical-decomposition.html
+
+opts.multiplicative: additive (FALSE, default) or multiplicative
+decomposition.
+
+opts.extrapolate_trend: if &gt; 0, linearly extrapolate the
+trend-cycle into the NAs left at both ends by the moving average
+in trend_component(), using OLS on the nearest
+(extrapolate_trend+1) valid trend points at each end. This also
+removes the corresponding NAs from detrended/season/remainder, since they are all computed downstream of trend. Mirrors the
+extrapolate_trend parameter of Python's
+statsmodels.tsa.seasonal.seasonal_decompose(); R's
+stats::decompose() (which fpp3's classical_decomposition() wraps)
+has no equivalent and always leaves the edge NAs in place, which
+is this function's default (extrapolate_trend=0) behavior too. */
+
+bundle self = set_bundle_and_get_defaults(default_values(), opts)
+
+scalar Torig = $nobs
+smpl y --contiguous
+scalar T = $nobs
+if T &lt; Torig
+  printf &quot;Warning: %d missing observations were ignored.\n&quot;, (Torig - T)
+endif
+scalar self.frequency = $pd
+scalar self.nobs = T
+
+check_seasonal_series(self.frequency, T, 2)
+
+series trend = trend_component(y)
+trend = extrapolate_trend_component(trend, self.extrapolate_trend)
+series detrended = detrended_component(y, trend, self.multiplicative)
+series season = season_component(detrended, self.multiplicative)
+series remainder = remainder_component(y, trend, season, self.multiplicative)
+setinfo trend --description=&quot;Trend-cycle component (classical decomposition)&quot; --graph-name=&quot;Trend-cycle&quot;
+setinfo season --description=&quot;Seasonal component (classical decomposition)&quot; --graph-name=&quot;Seasonal&quot;
+setinfo remainder --description=&quot;Remainder component (classical decomposition)&quot; --graph-name=&quot;Remainder&quot;
+
+series self.trend = trend
+series self.season = season
+series self.remainder = remainder
+series self.y = y
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="stl_decompose" type="bundle">
+ <params count="2">
+  <param name="y" type="series" const="true"/>
+  <param name="opts" type="bundle" optional="true"/>
+ </params>
+<code>/* STL: Seasonal-Trend decomposition using Loess.
+https://otexts.com/fpp3/stl.html
+Cleveland, Cleveland, McRae &amp; Terpenning (1990), &quot;STL: A
+Seasonal-Trend Decomposition Procedure Based on Loess&quot;.
+
+The decomposition is additive. For a multiplicative decomposition
+pass log(y) and transform the components back, as done with
+Python's statsmodels.tsa.seasonal.STL().
+
+opts.s_window: span of the loess smoother applied to each
+cycle-subseries (seasonal window), default 11 as in R's STL().
+opts.t_window: span of the trend smoother; 0 (default) sets the
+smallest odd integer &gt;= 1.5 * m / (1 - 1.5 / s_window).
+opts.l_window: span of the low-pass filter; 0 (default) sets the
+smallest odd integer &gt;= m (m: seasonal period).
+opts.inner: number of inner loop iterations; 0 (default) sets 2.
+opts.outer: number of outer (robustness) iterations; 0 (default)
+sets 0 if not robust and 15 if robust.
+opts.robust: use robustness weights to reduce the influence of
+outliers (default FALSE). */
+
+bundle self = set_bundle_and_get_defaults(stl_default_values(), opts)
+
+scalar Torig = $nobs
+smpl y --contiguous
+scalar T = $nobs
+if T &lt; Torig
+  printf &quot;Warning: %d missing observations were ignored.\n&quot;, (Torig - T)
+endif
+scalar n_p = $pd
+scalar self.frequency = n_p
+scalar self.nobs = T
+
+# At least three full cycles are required: the low-pass filter (Step 3)
+# applies moving averages of length n_p, n_p and 3, which leave only
+# T - 2*n_p valid points to be smoothed. Note that the seasonal smoother
+# (Step 2) works on cycle-subseries of only T/n_p points each, so many
+# more cycles are needed for a reliable estimate of a changing seasonal
+# pattern.
+check_seasonal_series(n_p, T, 3)
+errorif(self.s_window &lt; 3, &quot;opts.s_window must be at least 3.&quot;)
+
+if self.l_window == 0
+  self.l_window = stl_nextodd(n_p)
+endif
+if self.t_window == 0
+  self.t_window = stl_nextodd(1.5 * n_p / (1 - 1.5 / self.s_window))
+endif
+if self.inner == 0
+  self.inner = 2
+endif
+if self.outer == 0
+  self.outer = self.robust ? 15 : 0
+endif
+
+series rweights = 1
+series zero = 0
+list Linner = stl_inner_loop(y, n_p, self.s_window, self.t_window, self.l_window, self.inner, rweights, FALSE, zero)
+series trend = Linner.trend
+series season = Linner.season
+
+loop o = 1..self.outer
+  series remainder = y - trend - season
+  matrix rw = stl_robustness_weights(remainder)
+  series rweights = rw
+  list Linner = stl_inner_loop(y, n_p, self.s_window, self.t_window, self.l_window, self.inner, rweights, TRUE, trend)
+  series trend = Linner.trend
+  series season = Linner.season
+endloop
+
+series remainder = remainder_component(y, trend, season, FALSE)
+setinfo trend --description=&quot;Trend-cycle component (STL decomposition)&quot; --graph-name=&quot;Trend-cycle&quot;
+setinfo season --description=&quot;Seasonal component (STL decomposition)&quot; --graph-name=&quot;Seasonal&quot;
+setinfo remainder --description=&quot;Remainder component (STL decomposition)&quot; --graph-name=&quot;Remainder&quot;
+
+series self.trend = trend
+series self.season = season
+series self.remainder = remainder
+series self.y = y
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="plot_decompose" type="scalar">
+ <params count="3">
+  <param name="target" type="series" const="true"/>
+  <param name="Model" type="bundle" const="true"/>
+  <param name="opts" type="bundle" optional="true"/>
+ </params>
+<code>/* Plot the components of a classical decomposition as a grid plot
+with three rows: (1) actual and trend series, (2) seasonal
+component, (3) remainder component. The seasonal and the remainder
+subplots include a horizontal reference line at zero (additive
+model) or one (multiplicative model).
+
+Model: bundle returned by clc_decompose().
+
+opts.output: path+filename of the output file; if not set or empty, the plot is shown on screen.
+opts.layout: &quot;vertical&quot; (default; grid plot with three rows), &quot;horizontal&quot; (grid plot with three columns) or &quot;separate&quot; (three
+individual plots). For separate plots written to file, the suffix
+_trend, _season or _remainder is inserted before the file extension.
+opts.width, opts.height: size in pixels of the grid plot or, for
+separate plots, of each plot. Default (0): 800x900 (vertical), 1200x400 (horizontal) and 600x400 (separate).
+opts.title: overall title of the plot (default: none; ignored for
+separate plots as each plot has its own title).
+opts.linewidth: line width (default: 1.0).
+opts.monochrome: black lines only (default: FALSE).
+opts.grid: show grid lines (default: TRUE).
+
+Returns 0 if no error occurs, otherwise 1. */
+
+# check the input bundle
+strings required = defarray(&quot;trend&quot;, &quot;season&quot;, &quot;remainder&quot;, &quot;multiplicative&quot;)
+loop i = 1..nelem(required)
+  if !inbundle(Model, required[i])
+    printf &quot;Error: 'Model' is not a bundle returned by clc_decompose().\n&quot;
+    return 1
+  endif
+endloop
+if !exists(opts)
+  bundle opts = defbundle()
+endif
+bundle self = plot_default_values()
+self = opts + self          # override defaults
+
+if self.layout != &quot;vertical&quot; &amp;&amp; self.layout != &quot;horizontal&quot; &amp;&amp; self.layout != &quot;separate&quot;
+  printf &quot;Error: opts.layout must be 'vertical', 'horizontal' or 'separate'.\n&quot;
+  return 1
+endif
+# default plot size depending on layout
+if self.width == 0
+  self.width = (self.layout == &quot;vertical&quot;) ? 800 : (self.layout == &quot;horizontal&quot;) ? 1200 : 600
+endif
+if self.height == 0
+  self.height = (self.layout == &quot;vertical&quot;) ? 900 : 400
+endif
+
+series trend = Model.trend
+series season = Model.season
+series remainder = Model.remainder
+series ref = Model.multiplicative == TRUE ? 1 : 0   # reference line
+
+list Ltrend = target trend
+list Lseason = season ref
+list Lremainder = remainder ref
+
+# line style: first series, second series (trend or reference line)
+scalar lw = self.linewidth
+string st1 = sprintf(&quot;set linetype 1 lw %g&quot;, lw)
+string st2 = sprintf(&quot;set linetype 2 lw %g&quot;, lw)
+string ref_st = &quot;set linetype 2 dt 2 lw 1&quot;
+if self.monochrome
+  st1 = sprintf(&quot;set linetype 1 lc rgb 'black' lw %g&quot;, lw)
+  st2 = sprintf(&quot;set linetype 2 lc rgb 'black' dt 2 lw %g&quot;, lw)
+  ref_st = &quot;set linetype 2 lc rgb 'black' dt 3 lw 1&quot;
+endif
+string grid_st = self.grid ? &quot;set grid&quot; : &quot;unset grid&quot;
+
+# compute y-axis ranges for the seasonal and remainder subplots, to avoid excessive whitespace
+scalar ref0 = Model.multiplicative == TRUE ? 1 : 0
+scalar max_abs_remainder = max(abs(remainder - ref0))
+scalar max_abs_season = max(abs(season - ref0))
+scalar season_lo = ref0 - 1.025 * max_abs_season
+scalar season_hi = ref0 + 1.025 * max_abs_season
+scalar rem_lo = ref0 - 1.025 * max_abs_remainder
+scalar rem_hi = ref0 + 1.025 * max_abs_remainder
+
+strings Plots = array(3)
+
+plot Ltrend
+  options time-series with-lines single-yaxis
+  literal set title &quot;Data and trend-cycle&quot;
+  printf &quot;%s&quot;, grid_st
+  printf &quot;%s&quot;, st1
+  printf &quot;%s&quot;, st2
+end plot --outbuf=Plots[1]
+
+plot Lseason
+  options time-series with-lines single-yaxis
+  literal set title &quot;Seasonal&quot;
+  literal set nokey
+  printf &quot;%s&quot;, grid_st
+  printf &quot;%s&quot;, st1
+  printf &quot;%s&quot;, ref_st
+  printf &quot;set yrange [%g:%g]&quot;, season_lo, season_hi
+end plot --outbuf=Plots[2]
+
+plot Lremainder
+  options time-series with-lines single-yaxis
+  literal set title &quot;Remainder&quot;
+  literal set nokey
+  printf &quot;%s&quot;, grid_st
+  printf &quot;%s&quot;, st1
+  printf &quot;%s&quot;, ref_st
+  printf &quot;set yrange [%g:%g]&quot;, rem_lo, rem_hi
+end plot --outbuf=Plots[3]
+
+string dest = (strlen(self.output) &gt; 0) ? self.output : &quot;display&quot;
+string ttl = self.title
+
+if self.layout == &quot;separate&quot;
+  strings components = defarray(&quot;trend&quot;, &quot;season&quot;, &quot;remainder&quot;)
+  strings One = array(1)
+  loop i = 1..nelem(Plots)
+    One[1] = Plots[i]
+    string fname = dest == &quot;display&quot; ? &quot;display&quot; : plot_filename(dest, components[i])
+    catch gridplot One --width=self.width --height=self.height  --output=&quot;@fname&quot;
+    scalar error = $error
+    if error
+      printf &quot;Error: failed to create plot for %s component.\n&quot;, components[i]
+      printf &quot;       Check that the output file path is valid and writable.\n&quot;
+      printf &quot;       If the output file is open in another program, close it and try again.\n&quot;
+    endif
+    if error
+      return 1
+    endif
+  endloop
+else
+  scalar n_rows = (self.layout == &quot;vertical&quot;) ? 3 : 1
+  catch gridplot Plots --rows=n_rows --width=self.width --height=self.height --title=&quot;@ttl&quot; --output=&quot;@dest&quot;
+endif
+
+return $error ? 1 : 0
+</code>
+</gretl-function>
+<gretl-function name="strength_trend" type="scalar">
+ <params count="1">
+  <param name="Model" type="bundle" const="true"/>
+ </params>
+<code>/* Strength of trend, see https://otexts.com/fpp3/features.html
+(Wang, Smith &amp; Hyndman, 2006):
+
+F_T = max(0, 1 - Var(remainder) / Var(trend + remainder))
+
+Model: bundle returned by clc_decompose() or stl_decompose(). For a
+multiplicative decomposition the formula is applied to the logs of
+the components, i.e. to the additive decomposition of log(y).
+
+Returns a scalar between 0 (no trend) and 1 (strong trend). */
+
+return strength_measure(Model, &quot;trend&quot;)
+</code>
+</gretl-function>
+<gretl-function name="strength_season" type="scalar">
+ <params count="1">
+  <param name="Model" type="bundle" const="true"/>
+ </params>
+<code>/* Strength of seasonality, see https://otexts.com/fpp3/features.html
+(Wang, Smith &amp; Hyndman, 2006):
+
+F_S = max(0, 1 - Var(remainder) / Var(season + remainder))
+
+Model: bundle returned by clc_decompose() or stl_decompose(). For a
+multiplicative decomposition the formula is applied to the logs of
+the components, i.e. to the additive decomposition of log(y).
+
+Returns a scalar between 0 (no seasonality) and 1 (strong
+seasonality). */
+
+return strength_measure(Model, &quot;season&quot;)
+</code>
+</gretl-function>
+<gretl-function name="stl_index_ma" type="series" private="1">
+ <params count="2">
+  <param name="x" type="series" const="true"/>
+  <param name="p" type="int" const="true"/>
+ </params>
+<code>/* Centered simple p-term moving average via explicit lag/lead
+summation. Avoids movavg()'s undocumented, asymmetric edge/NA
+behavior for even p. */
+
+scalar half_lo = floor((p - 1) / 2)
+scalar half_hi = p - 1 - half_lo
+scalar jlo = -half_lo
+scalar jhi = half_hi
+
+series acc = 0
+loop j = jlo..jhi -q
+  acc += x(j)
+endloop
+
+return acc / p
+</code>
+</gretl-function>
+<gretl-function name="stl_wloess" type="series" private="1">
+ <params count="4">
+  <param name="y" type="series" const="true"/>
+  <param name="x" type="series" const="true"/>
+  <param name="q" type="scalar" const="true"/>
+  <param name="prior_w" type="series" const="true"/>
+ </params>
+<code>/* Weighted local-linear (d=1) loess: tricube kernel x external
+prior weight, closed-form weighted least squares (2 unknowns --
+intercept and slope) at each evaluation point. Needed because
+gretl's built-in loess() has no external-weight argument, but
+STL's outer-loop robustness weights (derived from the STL
+remainder) must be injected into Steps 2 and 6. Verified to match
+gretl's own loess() to floating-point precision when prior_w is
+all 1. Unlike loess(), it has no minimum number of observations.
+
+q is the span as a fraction of the number of points. As in the
+original STL implementation, q may exceed 1 (span larger than the
+number of points): the bandwidth is then widened by
+(q*n - n)/2 points on each side, so that all points keep a
+positive weight. */
+
+# keep missing values as NaN placeholders so that all matrices have
+# the same length as the sample (local to this function call)
+set skip_missing off
+
+scalar T = $nobs
+matrix xv = {x}
+matrix yv = {y}
+matrix wv = {prior_w}
+matrix okv = {ok(y)}
+
+matrix xok = selifr(xv, okv)
+matrix yok = selifr(yv, okv)
+matrix wok = selifr(wv, okv)
+scalar n = rows(xok)
+scalar n_local = ceil(min(q, 1) * n)
+# bandwidth widening for q &gt; 1, in units of x
+scalar spacing = (n &gt; 1) ? (max(xok) - min(xok)) / (n - 1) : 1
+scalar h_extra = (q &gt; 1) ? (q * n - n) / 2 * spacing : 0
+
+series result = NA
+loop t = 1..T -q
+  scalar xt = xv[t]
+  if ok(xv[t])
+    matrix d = abs(xok - xt)
+    matrix ds = msortby(d ~ seq(1,n)', 1)
+    scalar dmax = ds[min(n_local, n), 1] + h_extra
+    if dmax &lt;= 0
+      dmax = 1
+    endif
+    matrix u = d ./ dmax
+    matrix tw = (u .&lt; 1) .* (1 - u.^3).^3
+    matrix wt = tw .* wok
+    scalar sw = sumc(wt)
+    if sw &gt; 0
+      scalar xbar = sumc(wt .* xok) / sw
+      matrix xc = xok .- xbar
+      scalar sxx = sumc(wt .* xc.^2)
+      scalar ybar = sumc(wt .* yok) / sw
+      scalar b = (sxx &gt; 1.0e-12) ? sumc(wt .* xc .* (yok .- ybar)) / sxx : 0
+      result[t] = ybar + b * (xt - xbar)
+    endif
+  endif
+endloop
+
+return result
+</code>
+</gretl-function>
+<gretl-function name="stl_smooth" type="series" private="1">
+ <params count="5">
+  <param name="y" type="series" const="true"/>
+  <param name="x" type="series" const="true"/>
+  <param name="q" type="scalar" const="true"/>
+  <param name="rweights" type="series" const="true"/>
+  <param name="use_rweights" type="bool" const="true"/>
+ </params>
+<code>/* Local-linear loess smoothing with span q (fraction of the number
+of valid points; may exceed 1).
+
+Uses gretl's built-in loess() (fast path) if no robustness weights
+are active and if the number of valid points is large enough:
+loess() fails for fewer than 16 points (and its span cannot exceed
+1). Otherwise the from-scratch stl_wloess() is used, which also
+handles robustness weights, since loess() cannot accept external
+weights. Both give the same results up to floating-point
+precision. */
+
+scalar min_loess_obs = 16
+
+if use_rweights || sum(ok(y)) &lt; min_loess_obs
+  return stl_wloess(y, x, q, rweights)
+else
+  catch series result = loess(y, x, 1, min(q, 1))
+  if $error
+    funcerr &quot;loess() failed; try a larger smoothing window or a longer series&quot;
+  endif
+  return result
+endif
+</code>
+</gretl-function>
+<gretl-function name="stl_cycle_subseries_smooth" type="series" private="1">
+ <params count="5">
+  <param name="detrended" type="series" const="true"/>
+  <param name="s_window" type="int" const="true"/>
+  <param name="n_p" type="int" const="true"/>
+  <param name="rweights" type="series" const="true"/>
+  <param name="use_rweights" type="bool" const="true"/>
+ </params>
+<code>/* STL Step 2: split the detrended series into n_p cycle-subseries
+and loess-smooth each one independently at its own observed
+positions (no pre/post extension: the smoother cannot evaluate
+beyond the current sample's date range without extensive dataset
+manipulation, so this is a minor simplification relative to the
+original Cleveland et al. algorithm). */
+
+series season_id = lincomb(seasonals(), seq(1, n_p))
+series result = NA
+
+loop j = 1..n_p -q
+  smpl season_id == j --restrict
+  scalar n_j = $nobs
+  scalar q = s_window / n_j
+  series xidx = obs
+  series fit = stl_smooth(detrended, xidx, q, rweights, use_rweights)
+  series result = fit
+  smpl full
+endloop
+
+return result
+</code>
+</gretl-function>
+<gretl-function name="stl_lowpass" type="series" private="1">
+ <params count="3">
+  <param name="C" type="series" const="true"/>
+  <param name="n_p" type="int" const="true"/>
+  <param name="l_window" type="int" const="true"/>
+ </params>
+<code>/* STL Step 3: low-pass filter of the temporary seasonal series --
+two n_p-length centered moving averages, then a length-3 centered
+moving average, then a final loess smoothing (which also re-fills
+the NAs left at the edges by the moving averages, since the
+smoother evaluates at every non-missing x regardless of y). */
+
+series ma1 = stl_index_ma(C, n_p)
+series ma2 = stl_index_ma(ma1, n_p)
+series ma3 = stl_index_ma(ma2, 3)
+
+series xidx = obs
+scalar n_ok = sum(ok(ma3))
+scalar q = l_window / n_ok
+series no_weights = 1
+series result = stl_smooth(ma3, xidx, q, no_weights, FALSE)
+
+return result
+</code>
+</gretl-function>
+<gretl-function name="stl_trend_smooth" type="series" private="1">
+ <params count="4">
+  <param name="deseasonalized" type="series" const="true"/>
+  <param name="t_window" type="int" const="true"/>
+  <param name="rweights" type="series" const="true"/>
+  <param name="use_rweights" type="bool" const="true"/>
+ </params>
+<code>/* STL Step 6: trend smoothing via loess. */
+
+series xidx = obs
+scalar n_ok = sum(ok(deseasonalized))
+scalar q = t_window / n_ok
+series result = stl_smooth(deseasonalized, xidx, q, rweights, use_rweights)
+
+return result
+</code>
+</gretl-function>
+<gretl-function name="stl_robustness_weights" type="matrix" private="1">
+ <params count="1">
+  <param name="remainder" type="series" const="true"/>
+ </params>
+<code>/* Outer-loop bisquare robustness weights, per Cleveland et al.
+Section 2.4: h = 6*median(|R|); rho_v = B(|R_v|/h), B the
+bisquare function. median() skips missing values automatically
+(per gretl's funcref), so no manual NA filtering is needed. */
+
+scalar h = 6 * median(abs(remainder))
+if h &lt; 1.0e-12
+  # (numerically) perfect fit: nothing to down-weight
+  series ones_rw = 1
+  return {ones_rw}
+endif
+series u = abs(remainder) / h
+series rho = (u &lt; 1) ? (1 - u^2)^2 : 0
+return {rho}
+</code>
+</gretl-function>
+<gretl-function name="stl_nextodd" type="scalar" private="1">
+ <params count="1">
+  <param name="x" type="scalar" const="true"/>
+ </params>
+<code>/* Smallest odd integer &gt;= x. */
+
+scalar n = ceil(x)
+return (n % 2 == 0) ? n + 1 : n
+</code>
+</gretl-function>
+<gretl-function name="stl_inner_loop" type="list" private="1">
+ <params count="9">
+  <param name="y" type="series" const="true"/>
+  <param name="n_p" type="int" const="true"/>
+  <param name="s_window" type="int" const="true"/>
+  <param name="t_window" type="int" const="true"/>
+  <param name="l_window" type="int" const="true"/>
+  <param name="n_i" type="int" const="true"/>
+  <param name="rweights" type="series" const="true"/>
+  <param name="use_rweights" type="bool" const="true"/>
+  <param name="trend0" type="series" const="true"/>
+ </params>
+<code>/* Runs the STL inner loop (Steps 1-6) n_i times, starting from
+the trend 'trend0' (zero in the first pass; the previous trend in
+the outer robustness passes, as in Cleveland et al.), and returns
+the resulting {trend, season} list. */
+
+series trend = trend0
+series season = 0
+
+loop i = 1..n_i -q
+  series detrended = y - trend
+  series C = stl_cycle_subseries_smooth(detrended, s_window, n_p, rweights, use_rweights)
+  series lowpass = stl_lowpass(C, n_p, l_window)
+  series season = C - lowpass
+  series deseasonalized = y - season
+  series trend = stl_trend_smooth(deseasonalized, t_window, rweights, use_rweights)
+endloop
+
+list Lret = trend season
+return Lret
+</code>
+</gretl-function>
+<gretl-function name="stl_default_values" type="bundle" private="1">
+<code>/* Set default values for stl_decompose()'s options bundle. */
+
+bundle self = defbundle()
+scalar self.s_window = 11
+scalar self.t_window = 0        # 0: set automatically
+scalar self.l_window = 0        # 0: set automatically
+scalar self.inner = 0           # 0: set automatically
+scalar self.outer = 0           # 0: set automatically
+scalar self.robust = FALSE
+scalar self.multiplicative = FALSE
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="default_values" type="bundle" private="1">
+<code>/* Set default values for clc_decompose()'s options bundle. */
+
+bundle self = defbundle()
+scalar self.multiplicative = FALSE
+scalar self.extrapolate_trend = 0
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="set_bundle_and_get_defaults" type="bundle" private="1">
+ <params count="2">
+  <param name="defaults" type="bundle" const="true"/>
+  <param name="opts" type="bundle" optional="true"/>
+ </params>
+<code>/* Compile self bundle by merging eventual information
+from 'opts' bundle into the 'defaults' bundle. */
+
+if !exists(opts)
+  bundle opts = defbundle()
+endif
+
+bundle self = defaults
+self = opts + self          # override defaults
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="check_seasonal_series" type="void" private="1">
+ <params count="3">
+  <param name="frequency" type="scalar" const="true"/>
+  <param name="nobs" type="scalar" const="true"/>
+  <param name="min_cycles" type="scalar" default="2" const="true"/>
+ </params>
+<code>/* Raise an error if the series is not seasonal or if it holds
+fewer than 'min_cycles' full seasonal cycles. */
+
+errorif(frequency == 1, &quot;Time-series must have seasonal frequency.&quot;)
+errorif(nobs &lt; min_cycles * frequency, sprintf(&quot;Time-series must have at least %d valid observations.&quot;, min_cycles * frequency))
+</code>
+</gretl-function>
+<gretl-function name="remainder_component" type="series" private="1">
+ <params count="4">
+  <param name="y" type="series" const="true"/>
+  <param name="trend" type="series" const="true"/>
+  <param name="season" type="series" const="true"/>
+  <param name="multiplicative" type="bool" const="true"/>
+ </params>
+<code>/* Compute the remainder component. */
+
+if multiplicative
+  return y / (trend * season)
+else
+  return y - trend - season
+endif
+</code>
+</gretl-function>
+<gretl-function name="season_component" type="series" private="1">
+ <params count="2">
+  <param name="detrended" type="series" const="true"/>
+  <param name="multiplicative" type="bool" const="true"/>
+ </params>
+<code>/* Compute seasonal component. */
+
+matrix m = seasonal_means(detrended)
+
+# center the seasonal indices: sum to zero (additive) or
+# average to one (multiplicative), as required by the
+# classical decomposition method
+if multiplicative
+  m = m ./ meanc(m)
+else
+  m = m .- meanc(m)
+endif
+
+return lincomb(seasonals(), m')
+</code>
+</gretl-function>
+<gretl-function name="seasonal_means" type="matrix" private="1">
+ <params count="1">
+  <param name="detrended" type="series" const="true"/>
+ </params>
+<code>/* Compute seasonal averages based on detrended series. Clever idea from Oleh. */
+
+series season_id = lincomb(seasonals(), seq(1, $pd))
+# mean values for each season id (january, feb etc)
+matrix m = aggregate(detrended, season_id, mean)[,3]
+return m
+</code>
+</gretl-function>
+<gretl-function name="detrended_component" type="series" private="1">
+ <params count="3">
+  <param name="y" type="series" const="true"/>
+  <param name="trend" type="series" const="true"/>
+  <param name="multiplicative" type="bool" const="true"/>
+ </params>
+<code>/* Compute detrended component */
+
+if multiplicative
+  series season = y / trend
+else
+  series season = y - trend
+endif
+
+return season
+</code>
+</gretl-function>
+<gretl-function name="trend_component" type="series" private="1">
+ <params count="1">
+  <param name="y" type="series" const="true"/>
+ </params>
+<code>/* Compute the trend-cycle component via a centered moving average,
+per https://otexts.com/fpp3/classical-decomposition.html (Step 1):
+an m-MA if the seasonal period m ($pd) is odd, or a 2xm-MA if m is
+even. gretl's movavg(x, p, control) with a non-zero control already
+implements the full centered procedure for either case -- for even
+p this is the two-stage &quot;m-MA then 2-MA of that&quot; construction, not
+a plain (2p)-term average, so no manual doubling of p is needed or
+correct. Verified against the worked beer-production example in
+the fpp3 textbook (Table 3.2): movavg(beer, 4, 1) reproduces the
+published 2x4-MA column exactly. */
+
+series trend = movavg(y, $pd, 1)
+
+return trend
+</code>
+</gretl-function>
+<gretl-function name="extrapolate_trend_component" type="series" private="1">
+ <params count="2">
+  <param name="trend" type="series"/>
+  <param name="n" type="int" const="true"/>
+ </params>
+<code>/* Linearly extrapolate trend into the NAs left at both ends by
+trend_component()'s moving average, via OLS on the nearest (n+1)
+valid points at each end. Mirrors statsmodels'
+seasonal_decompose(..., extrapolate_trend=n) / its internal
+_extrapolate_trend() helper. A no-op when n &lt;= 0 (the default), which preserves the previous behavior of leaving the edge NAs in
+place -- matching R's stats::decompose(), which has no equivalent
+option.
+
+In plain terms:
+find the first and last non-missing trend index (front, back)
+if there's a gap before front:
+  fit a line through the nearest (n+1) valid trend points
+  starting at front, and use it to fill trend[1 .. front-1]
+  if there's a gap after back:
+    fit a line through the nearest (n+1) valid trend points
+    ending at back, and use it to fill trend[back+1 .. T]
+
+    Implemented with matrices and mols() rather than the ols command:
+    `set skip_missing off` makes {trend} convert the series to a
+    matrix that keeps NAs as NaN placeholders (instead of silently
+    dropping those rows, which is gretl's default for series-to-matrix
+    conversion), so the matrix stays the same length as the series and
+    &quot;which positions are missing&quot; can be read off directly with ok().
+    The two edge fits then become plain matrix regressions (mols) and
+    the fill-in is a single matrix multiplication, rather than a
+    manual per-observation loop. This setting is local to the
+    function call and does not affect the caller. */
+
+      if n &lt;= 0
+        return trend
+      endif
+
+      set skip_missing off
+      scalar T = $nobs
+      matrix idx = seq(1, T)'
+      matrix y = {trend}
+      matrix valid = ok(y)
+
+      # indices of all valid (non-missing) trend points; the first and
+      # last of these are the front/back edges of the valid region
+      matrix valid_idx = selifr(idx, valid)
+      if rows(valid_idx) == 0
+        # trend has no valid values at all -- nothing to extrapolate
+        return trend
+      endif
+      scalar front = valid_idx[1]
+      scalar back = valid_idx[rows(valid_idx)]
+
+      if front &gt; 1
+        scalar front_last = min(front + n, back)
+        matrix X = idx[front:front_last] ~ ones(front_last - front + 1, 1)
+        matrix b = mols(y[front:front_last], X)
+        matrix Xfill = idx[1:front-1] ~ ones(front - 1, 1)
+        y[1:front-1] = Xfill * b
+      endif
+
+      if back &lt; T
+        scalar back_first = max(front, back - n)
+        matrix X2 = idx[back_first:back] ~ ones(back - back_first + 1, 1)
+        matrix b2 = mols(y[back_first:back], X2)
+        matrix Xfill2 = idx[back+1:T] ~ ones(T - back, 1)
+        y[back+1:T] = Xfill2 * b2
+      endif
+
+      series result = y
+      return result
+</code>
+</gretl-function>
+<gretl-function name="strength_measure" type="scalar" private="1">
+ <params count="2">
+  <param name="Model" type="bundle" const="true"/>
+  <param name="component" type="string" const="true"/>
+ </params>
+<code>/* Shared worker of strength_trend() and strength_season():
+max(0, 1 - Var(remainder) / Var(component + remainder)) evaluated on
+the observations where both series are valid (the classical
+decomposition leaves NAs at the edges). For a multiplicative
+decomposition the components are log-transformed first. */
+
+strings required = defarray(&quot;trend&quot;, &quot;season&quot;, &quot;remainder&quot;, &quot;multiplicative&quot;)
+loop foreach i required
+  errorif(!inbundle(Model, required[i]), &quot;'Model' is not a bundle returned by clc_decompose() or stl_decompose().&quot;)
+endloop
+
+series comp = Model[component]
+series rem = Model.remainder
+if Model.multiplicative
+  comp = log(comp)
+  rem = log(rem)
+endif
+series total = comp + rem
+
+smpl ok(total) --restrict
+errorif($nobs &lt; 2, &quot;At least two valid observations are required.&quot;)
+scalar v_total = var(total)
+errorif(v_total == 0, &quot;The variance of the series is zero.&quot;)
+
+return max(0, 1 - var(rem) / v_total)
+</code>
+</gretl-function>
+<gretl-function name="plot_filename" type="string" private="1">
+ <params count="2">
+  <param name="path" type="string" const="true"/>
+  <param name="suffix" type="string" const="true"/>
+ </params>
+<code>/* Insert '_&lt;suffix&gt;' before the file extension of 'path'. A name
+without extension gets the suffix appended. */
+
+scalar n = strlen(path)
+scalar dot = 0
+loop j = 1..n -q
+  scalar k = n - j + 1
+  string ch = substr(path, k, k)
+  if ch == &quot;/&quot;
+    break
+  elif ch == &quot;.&quot;
+    dot = k
+    break
+  endif
+endloop
+
+# a leading dot (hidden file) is not an extension
+if dot &gt; 1 &amp;&amp; substr(path, dot-1, dot-1) != &quot;/&quot;
+  return sprintf(&quot;%s_%s%s&quot;, substr(path, 1, dot-1), suffix, substr(path, dot, n))
+endif
+return sprintf(&quot;%s_%s&quot;, path, suffix)
+</code>
+</gretl-function>
+<gretl-function name="plot_default_values" type="bundle" private="1">
+<code>/* Set default values for clc_plot()'s options bundle. */
+
+bundle self = defbundle()
+string self.output = &quot;&quot;         # empty: show plot on screen
+string self.title = &quot;&quot;          # empty: no overall title
+string self.layout = &quot;vertical&quot; # vertical, horizontal or separate
+scalar self.width = 0           # 0: set automatically depending on layout
+scalar self.height = 0          # 0: set automatically depending on layout
+scalar self.linewidth = 1.0
+scalar self.monochrome = FALSE
+scalar self.grid = TRUE
+
+return self
+</code>
+</gretl-function>
+<sample-script>
+clear
+set verbose off
+include tsdecomp.gfn
+
+# Monthly airline passengers (Box-Jenkins series G)
+open bjg.gdt --quiet
+series y = g
+
+
+EXAMPLE = 1  # 1: Additive classical decomposition
+             # 2: Multiplicative classical decomp. with trend extrapolation
+             # 3: STL decomposition with robust weights
+
+
+if EXAMPLE == 1
+    # Additive classical decomposition
+    bundle Ret = clc_decompose(y)
+
+elif EXAMPLE == 2
+    # Multiplicative decomposition with trend extrapolation: fills in the
+    # missing values which the moving average leaves at both ends
+    bundle opts = _(multiplicative=TRUE, extrapolate_trend=3)
+    bundle Ret = clc_decompose(y, opts)
+
+elif EXAMPLE == 3
+    # STL decomposition with robust weights
+    bundle opts = _(outer=1, inner=2, robust=TRUE)
+    bundle Ret = stl_decompose(y, opts)
+endif
+
+# Retrieve the components as series
+series trend = Ret.trend
+series season = Ret.season
+series remainder = Ret.remainder
+list L = y trend season remainder
+
+# Print the first and last 10 rows of the components
+print L --byobs --range=1:10
+print L --byobs --range=-10:
+
+# Strength of trend and seasonality
+scalar FT = strength_trend(Ret)
+scalar FS = strength_season(Ret)
+printf &quot;Strength of trend: %.3f, strength of seasonality: %.3f\n&quot;, FT, FS
+
+# Plot the components
+scalar err = plot_decompose(y, Ret)
+
+# Components side by side, with an overall title
+bundle plot_opts = _(layout=&quot;horizontal&quot;, title=&quot;Some decomposition&quot;)
+err = plot_decompose(y, Ret, plot_opts)
+
+# OPTIONAL: Three separate plots. To save them to file, pass &quot;output&quot;, e.g.
+# &quot;tsdecomp.png&quot;, which produces tsdecomp_trend.png,
+# tsdecomp_season.png and tsdecomp_remainder.png
+#plot_opts = _(layout=&quot;separate&quot;, output=&quot;tsdecomp.png&quot;, width=400, height=400)
+#err = plot_decompose(y, Ret, plot_opts)
+</sample-script>
+</gretl-function-package>
+</gretl-functions>
