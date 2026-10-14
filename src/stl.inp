@@ -1,4 +1,4 @@
-# Requires decomposition.inp (shared helpers); include that file first.
+# Requires tsdecomp.inp (shared helpers); include that file first.
 
 function series stl_index_ma (const series x, const int p)
     /* Centered simple p-term moving average via explicit lag/lead
