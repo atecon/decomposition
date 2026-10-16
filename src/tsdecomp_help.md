@@ -8,6 +8,7 @@ This gretl package decomposes a seasonal time series into a trend-cycle, a seaso
 The series must have a seasonal (periodic) frequency, e.g. quarterly or monthly data. The seasonal period is taken from the dataset frequency.
 
 *Alternative gretl packages* for trend and/or seasonal decompositions are:
+
 1. `StrucTiSM`: Harvey-style Structural Time Series Models, https://gretl.sourceforge.net/current_fnfiles/unzipped/StrucTiSM.pdf
 2. `Holt`: Holt' double exponential smoothing with level and trend components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Holt.pdf
 3. `Winters`: Holt-Winters triple exponential smoothing with level, trend and seasonal components, https://gretl.sourceforge.net/current_fnfiles/unzipped/Winters.pdf
