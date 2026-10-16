@@ -1,7 +1,7 @@
 author = Artur Tarassow
 email = atecon@posteo.de
 version = 0.1
-date = 2026-10-14
+date = 2026-10-15
 description = Seasonal decomposition of time-series
 tags = C22
 min-version = 2024c
